@@ -28,7 +28,7 @@ on:
           - phi3:mini
 
       max_fix_attempts:
-        description: "How many times AI should try fixing build errors"
+        description: "AI build-fix attempts"
         required: true
         default: "3"
         type: choice
@@ -74,14 +74,13 @@ jobs:
           sudo apt update
           sudo apt install -y \
             curl wget unzip zip git jq python3 python3-pip \
-            openjdk-17-jdk build-essential ca-certificates
+            openjdk-17-jdk build-essential ca-certificates gradle
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-          cache: gradle
+          java-version: 17
 
       - name: Install Android SDK
         run: |
@@ -116,7 +115,7 @@ jobs:
         run: |
           ollama pull "${{ github.event.inputs.ai_model }}"
 
-      - name: Create GOD MODE generator scripts
+      - name: Create GOD MODE scripts
         run: |
           mkdir -p .godmode
 
@@ -128,16 +127,21 @@ jobs:
           package_name = os.environ["PACKAGE_NAME"]
           app_name = os.environ["APP_NAME"]
 
+          package_path = package_name.replace(".", "/")
+
           prompt = f"""
           You are GOD MODE Android Builder.
 
           Build a complete, production-level Android application.
 
-          USER APP NAME:
+          APP NAME:
           {app_name}
 
-          USER PACKAGE NAME:
+          PACKAGE NAME:
           {package_name}
+
+          PACKAGE PATH:
+          app/src/main/java/{package_path}
 
           USER PROMPT:
           {app_prompt}
@@ -151,7 +155,7 @@ jobs:
           - Minimum SDK 26.
           - Java 17.
           - Gradle Kotlin DSL.
-          - Complete buildable project.
+          - Complete buildable Android project.
           - No TODO placeholders.
           - No fake dependencies.
           - No missing files.
@@ -165,34 +169,35 @@ jobs:
           - Do not require API keys.
           - Do not use external backend unless user specifically requested it.
 
-          OUTPUT FORMAT IS STRICT:
+          ABSOLUTE OUTPUT RULE:
+          Output files only using this exact format:
 
           FILE: settings.gradle.kts
           ```kotlin
-          file content here
+          content
           ```
 
           FILE: build.gradle.kts
           ```kotlin
-          file content here
+          content
           ```
 
           FILE: app/build.gradle.kts
           ```kotlin
-          file content here
+          content
           ```
 
           FILE: app/src/main/AndroidManifest.xml
           ```xml
-          file content here
+          content
           ```
 
-          FILE: app/src/main/java/path/to/File.kt
+          FILE: app/src/main/java/{package_path}/MainActivity.kt
           ```kotlin
-          file content here
+          content
           ```
 
-          Include every required file.
+          Include every required Kotlin file.
           """
           Path(".godmode/main_prompt.txt").write_text(prompt)
           PY
@@ -204,7 +209,7 @@ jobs:
           text = Path(".godmode/ai_output.txt").read_text(errors="ignore")
 
           pattern = re.compile(
-              r"FILE:\s*(.*?)\n```(?:kotlin|kt|xml|gradle|properties|text|txt)?\n(.*?)```",
+              r"FILE:\s*(.*?)\n```(?:kotlin|kt|xml|gradle|properties|toml|txt|text)?\n(.*?)```",
               re.DOTALL
           )
 
@@ -215,9 +220,10 @@ jobs:
               print("AI output saved at .godmode/ai_output.txt")
               raise SystemExit(1)
 
+          count = 0
+
           for raw_path, content in matches:
-              path = raw_path.strip()
-              path = path.replace("\\", "/")
+              path = raw_path.strip().replace("\\", "/")
 
               if path.startswith("/") or ".." in Path(path).parts:
                   print(f"Skipping unsafe path: {path}")
@@ -227,23 +233,28 @@ jobs:
               file_path.parent.mkdir(parents=True, exist_ok=True)
               file_path.write_text(content.strip() + "\n")
               print(f"Wrote {file_path}")
+              count += 1
 
-          print(f"Total files written: {len(matches)}")
+          print(f"Total files written: {count}")
           PY
 
           cat > .godmode/create_fix_prompt.py <<'PY'
-          import os
           from pathlib import Path
 
-          build_log = Path(".godmode/build_error.log").read_text(errors="ignore") if Path(".godmode/build_error.log").exists() else ""
-          file_tree = "\n".join(str(p) for p in Path(".").rglob("*") if ".git" not in str(p) and p.is_file())
+          build_error = Path(".godmode/build_error.log").read_text(errors="ignore") if Path(".godmode/build_error.log").exists() else ""
+          build_log = Path(".godmode/build.log").read_text(errors="ignore") if Path(".godmode/build.log").exists() else ""
+
+          files = []
+          for p in Path(".").rglob("*"):
+              if p.is_file() and ".git" not in str(p) and ".gradle" not in str(p) and "build/" not in str(p):
+                  files.append(str(p))
 
           prompt = f"""
           You are GOD MODE Android Build Fixer.
 
           The Android project failed to build.
 
-          Fix the project by outputting ONLY the files that need to be changed.
+          Fix the project by outputting ONLY corrected full files.
 
           STRICT OUTPUT FORMAT:
 
@@ -256,15 +267,14 @@ jobs:
           - Output complete files only.
           - Do not output explanations.
           - Do not use placeholders.
-          - Keep package name consistent.
-          - Fix Gradle, Kotlin, Compose, imports, manifest, and dependency issues.
+          - Fix Gradle, Kotlin, Compose, imports, manifest, package names, and dependency issues.
           - The project must compile with ./gradlew assembleDebug.
 
           FILE TREE:
-          {file_tree}
+          {chr(10).join(files)}
 
-          BUILD ERROR LOG:
-          {build_log[-12000:]}
+          BUILD LOG:
+          {(build_log + chr(10) + build_error)[-16000:]}
           """
           Path(".godmode/fix_prompt.txt").write_text(prompt)
           PY
@@ -276,20 +286,20 @@ jobs:
           APP_NAME: ${{ github.event.inputs.app_name }}
         run: |
           python3 .godmode/create_prompt.py
-
           ollama run "${{ github.event.inputs.ai_model }}" < .godmode/main_prompt.txt > .godmode/ai_output.txt
-
           python3 .godmode/write_files.py
 
       - name: Add Gradle wrapper if missing
         run: |
           if [ ! -f ./gradlew ]; then
-            echo "Gradle wrapper missing. Installing temporary Gradle wrapper..."
+            echo "Gradle wrapper missing."
 
-            sudo apt install -y gradle || true
-
-            if [ -f settings.gradle.kts ] || [ -f settings.gradle ]; then
+            if [ -f settings.gradle.kts ] || [ -f settings.gradle ] || [ -f build.gradle.kts ] || [ -f build.gradle ]; then
+              echo "Gradle project detected. Creating wrapper..."
               gradle wrapper --gradle-version 8.10.2 || true
+            else
+              echo "No Gradle project files found. AI generation likely failed."
+              echo "Check god-mode-ai-logs artifact."
             fi
           fi
 
@@ -311,7 +321,18 @@ jobs:
             echo "Build attempt $COUNT of $ATTEMPTS"
             echo "====================================================="
 
-            chmod +x ./gradlew 2>/dev/null || true
+            if [ ! -f ./gradlew ]; then
+              echo "gradlew missing. Trying to create Gradle wrapper again..."
+              gradle wrapper --gradle-version 8.10.2 || true
+              chmod +x ./gradlew 2>/dev/null || true
+            fi
+
+            if [ ! -f ./gradlew ]; then
+              echo "No gradlew found. Cannot build."
+              exit 1
+            fi
+
+            chmod +x ./gradlew
             ./gradlew clean assembleDebug --stacktrace > .godmode/build.log 2> .godmode/build_error.log
             STATUS=$?
 
@@ -325,9 +346,9 @@ jobs:
 
             python3 .godmode/create_fix_prompt.py
 
-            ollama run "${{ github.event.inputs.ai_model }}" < .godmode/fix_prompt.txt > .godmode/fix_output_$COUNT.txt
+            ollama run "${{ github.event.inputs.ai_model }}" < .godmode/fix_prompt.txt > ".godmode/fix_output_$COUNT.txt"
 
-            cp .godmode/fix_output_$COUNT.txt .godmode/ai_output.txt
+            cp ".godmode/fix_output_$COUNT.txt" .godmode/ai_output.txt
             python3 .godmode/write_files.py || true
           done
 
@@ -355,8 +376,8 @@ jobs:
           ## Build Date
           $(date)
 
-          ## APK Output
-          Check GitHub Actions artifacts.
+          ## Result
+          Check APK artifact and GOD MODE logs.
           EOF
 
       - name: Upload APK artifact
