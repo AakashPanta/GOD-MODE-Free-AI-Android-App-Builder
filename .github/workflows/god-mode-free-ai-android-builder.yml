@@ -1,0 +1,387 @@
+name: GOD MODE Free AI Android Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_prompt:
+        description: "Describe the Android app you want to build"
+        required: true
+        type: string
+
+      ai_model:
+        description: "Choose free local AI model"
+        required: true
+        default: "qwen2.5-coder:7b"
+        type: choice
+        options:
+          - qwen2.5-coder:1.5b
+          - qwen2.5-coder:7b
+          - qwen2.5-coder:14b
+          - deepseek-coder:1.3b
+          - deepseek-coder:6.7b
+          - codellama:7b
+          - codellama:13b
+          - codegemma:2b
+          - codegemma:7b
+          - starcoder2:3b
+          - starcoder2:7b
+          - phi3:mini
+
+      max_fix_attempts:
+        description: "How many times AI should try fixing build errors"
+        required: true
+        default: "3"
+        type: choice
+        options:
+          - "1"
+          - "2"
+          - "3"
+          - "4"
+          - "5"
+
+      package_name:
+        description: "Android package name"
+        required: true
+        default: "com.mrrobot.vibeapp"
+        type: string
+
+      app_name:
+        description: "App name"
+        required: true
+        default: "Vibe App"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  god-mode-build:
+    name: Generate Android App With Free AI
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      ANDROID_SDK_ROOT: /opt/android-sdk
+      JAVA_VERSION: "17"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install base packages
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            curl wget unzip zip git jq python3 python3-pip \
+            openjdk-17-jdk build-essential ca-certificates
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Install Android SDK
+        run: |
+          sudo mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd /tmp
+
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip
+          sudo mv cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
+
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+
+          yes | sudo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
+          sudo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+      - name: Install Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Start Ollama
+        run: |
+          nohup ollama serve > ollama.log 2>&1 &
+          sleep 10
+          cat ollama.log || true
+
+      - name: Pull selected free AI model
+        run: |
+          ollama pull "${{ github.event.inputs.ai_model }}"
+
+      - name: Create GOD MODE generator scripts
+        run: |
+          mkdir -p .godmode
+
+          cat > .godmode/create_prompt.py <<'PY'
+          import os
+          from pathlib import Path
+
+          app_prompt = os.environ["APP_PROMPT"]
+          package_name = os.environ["PACKAGE_NAME"]
+          app_name = os.environ["APP_NAME"]
+
+          prompt = f"""
+          You are GOD MODE Android Builder.
+
+          Build a complete, production-level Android application.
+
+          USER APP NAME:
+          {app_name}
+
+          USER PACKAGE NAME:
+          {package_name}
+
+          USER PROMPT:
+          {app_prompt}
+
+          HARD REQUIREMENTS:
+          - Kotlin only.
+          - Jetpack Compose only.
+          - Material 3.
+          - MVVM architecture.
+          - Android target SDK 36.
+          - Minimum SDK 26.
+          - Java 17.
+          - Gradle Kotlin DSL.
+          - Complete buildable project.
+          - No TODO placeholders.
+          - No fake dependencies.
+          - No missing files.
+          - No explanations outside file blocks.
+          - Must compile with ./gradlew assembleDebug.
+          - Include dark and light theme.
+          - Include polished premium UI.
+          - Include proper package name: {package_name}.
+          - Use simple local in-memory or local persistence when needed.
+          - Do not require paid services.
+          - Do not require API keys.
+          - Do not use external backend unless user specifically requested it.
+
+          OUTPUT FORMAT IS STRICT:
+
+          FILE: settings.gradle.kts
+          ```kotlin
+          file content here
+          ```
+
+          FILE: build.gradle.kts
+          ```kotlin
+          file content here
+          ```
+
+          FILE: app/build.gradle.kts
+          ```kotlin
+          file content here
+          ```
+
+          FILE: app/src/main/AndroidManifest.xml
+          ```xml
+          file content here
+          ```
+
+          FILE: app/src/main/java/path/to/File.kt
+          ```kotlin
+          file content here
+          ```
+
+          Include every required file.
+          """
+          Path(".godmode/main_prompt.txt").write_text(prompt)
+          PY
+
+          cat > .godmode/write_files.py <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path(".godmode/ai_output.txt").read_text(errors="ignore")
+
+          pattern = re.compile(
+              r"FILE:\s*(.*?)\n```(?:kotlin|kt|xml|gradle|properties|text|txt)?\n(.*?)```",
+              re.DOTALL
+          )
+
+          matches = pattern.findall(text)
+
+          if not matches:
+              print("No valid FILE blocks found.")
+              print("AI output saved at .godmode/ai_output.txt")
+              raise SystemExit(1)
+
+          for raw_path, content in matches:
+              path = raw_path.strip()
+              path = path.replace("\\", "/")
+
+              if path.startswith("/") or ".." in Path(path).parts:
+                  print(f"Skipping unsafe path: {path}")
+                  continue
+
+              file_path = Path(path)
+              file_path.parent.mkdir(parents=True, exist_ok=True)
+              file_path.write_text(content.strip() + "\n")
+              print(f"Wrote {file_path}")
+
+          print(f"Total files written: {len(matches)}")
+          PY
+
+          cat > .godmode/create_fix_prompt.py <<'PY'
+          import os
+          from pathlib import Path
+
+          build_log = Path(".godmode/build_error.log").read_text(errors="ignore") if Path(".godmode/build_error.log").exists() else ""
+          file_tree = "\n".join(str(p) for p in Path(".").rglob("*") if ".git" not in str(p) and p.is_file())
+
+          prompt = f"""
+          You are GOD MODE Android Build Fixer.
+
+          The Android project failed to build.
+
+          Fix the project by outputting ONLY the files that need to be changed.
+
+          STRICT OUTPUT FORMAT:
+
+          FILE: path/to/file
+          ```kotlin
+          full corrected file content
+          ```
+
+          Rules:
+          - Output complete files only.
+          - Do not output explanations.
+          - Do not use placeholders.
+          - Keep package name consistent.
+          - Fix Gradle, Kotlin, Compose, imports, manifest, and dependency issues.
+          - The project must compile with ./gradlew assembleDebug.
+
+          FILE TREE:
+          {file_tree}
+
+          BUILD ERROR LOG:
+          {build_log[-12000:]}
+          """
+          Path(".godmode/fix_prompt.txt").write_text(prompt)
+          PY
+
+      - name: Generate Android project with selected AI
+        env:
+          APP_PROMPT: ${{ github.event.inputs.app_prompt }}
+          PACKAGE_NAME: ${{ github.event.inputs.package_name }}
+          APP_NAME: ${{ github.event.inputs.app_name }}
+        run: |
+          python3 .godmode/create_prompt.py
+
+          ollama run "${{ github.event.inputs.ai_model }}" < .godmode/main_prompt.txt > .godmode/ai_output.txt
+
+          python3 .godmode/write_files.py
+
+      - name: Add Gradle wrapper if missing
+        run: |
+          if [ ! -f ./gradlew ]; then
+            echo "Gradle wrapper missing. Installing temporary Gradle wrapper..."
+
+            sudo apt install -y gradle || true
+
+            if [ -f settings.gradle.kts ] || [ -f settings.gradle ]; then
+              gradle wrapper --gradle-version 8.10.2 || true
+            fi
+          fi
+
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+          fi
+
+      - name: GOD MODE self-healing build loop
+        run: |
+          set +e
+
+          ATTEMPTS="${{ github.event.inputs.max_fix_attempts }}"
+          COUNT=0
+
+          while [ "$COUNT" -lt "$ATTEMPTS" ]; do
+            COUNT=$((COUNT + 1))
+
+            echo "====================================================="
+            echo "Build attempt $COUNT of $ATTEMPTS"
+            echo "====================================================="
+
+            chmod +x ./gradlew 2>/dev/null || true
+            ./gradlew clean assembleDebug --stacktrace > .godmode/build.log 2> .godmode/build_error.log
+            STATUS=$?
+
+            if [ "$STATUS" -eq 0 ]; then
+              echo "Build successful."
+              exit 0
+            fi
+
+            echo "Build failed. Asking AI to fix..."
+            cat .godmode/build_error.log | tail -200 || true
+
+            python3 .godmode/create_fix_prompt.py
+
+            ollama run "${{ github.event.inputs.ai_model }}" < .godmode/fix_prompt.txt > .godmode/fix_output_$COUNT.txt
+
+            cp .godmode/fix_output_$COUNT.txt .godmode/ai_output.txt
+            python3 .godmode/write_files.py || true
+          done
+
+          echo "Build failed after all fix attempts."
+          exit 1
+
+      - name: Create build report
+        if: always()
+        run: |
+          cat > BUILD_REPORT.md <<EOF
+          # GOD MODE Android AI Build Report
+
+          ## App Name
+          ${{ github.event.inputs.app_name }}
+
+          ## Package Name
+          ${{ github.event.inputs.package_name }}
+
+          ## AI Model Used
+          ${{ github.event.inputs.ai_model }}
+
+          ## Prompt
+          ${{ github.event.inputs.app_prompt }}
+
+          ## Build Date
+          $(date)
+
+          ## APK Output
+          Check GitHub Actions artifacts.
+          EOF
+
+      - name: Upload APK artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: god-mode-android-apk
+          path: |
+            **/build/outputs/apk/debug/*.apk
+
+      - name: Upload GOD MODE logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: god-mode-ai-logs
+          path: |
+            .godmode/
+            BUILD_REPORT.md
+
+      - name: Commit generated project
+        if: always()
+        run: |
+          git config user.name "GOD MODE Android AI Builder"
+          git config user.email "actions@github.com"
+
+          git add .
+          git commit -m "Generate Android app with GOD MODE free AI" || echo "No changes to commit"
+          git push || echo "Push skipped or failed"
