@@ -1,0 +1,702 @@
+name: ULTRA GOD MODE Free AI Android Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_prompt:
+        description: "Describe the Android app you want to build"
+        required: true
+        type: string
+
+      ai_model:
+        description: "Choose free local AI model"
+        required: true
+        default: "qwen2.5-coder:7b"
+        type: choice
+        options:
+          - qwen2.5-coder:1.5b
+          - qwen2.5-coder:7b
+          - deepseek-coder:1.3b
+          - deepseek-coder:6.7b
+          - codellama:7b
+          - codegemma:2b
+          - codegemma:7b
+          - starcoder2:3b
+          - starcoder2:7b
+          - phi3:mini
+
+      package_name:
+        description: "Android package name"
+        required: true
+        default: "com.mrrobot.ultraapp"
+        type: string
+
+      app_name:
+        description: "App name"
+        required: true
+        default: "Ultra App"
+        type: string
+
+      max_fix_attempts:
+        description: "AI build-fix attempts"
+        required: true
+        default: "3"
+        type: choice
+        options:
+          - "1"
+          - "2"
+          - "3"
+          - "4"
+          - "5"
+
+permissions:
+  contents: write
+
+jobs:
+  ultra-god-mode:
+    name: Build Android App With Free Local AI
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      ANDROID_SDK_ROOT: /opt/android-sdk
+      JAVA_VERSION: "17"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install base packages
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            curl wget unzip zip git jq python3 python3-pip \
+            openjdk-17-jdk build-essential ca-certificates gradle
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Android SDK
+        run: |
+          sudo mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd /tmp
+
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip
+          sudo mv cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
+
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+
+          yes | sudo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
+          sudo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+      - name: Install Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Start Ollama
+        run: |
+          nohup ollama serve > ollama.log 2>&1 &
+          sleep 10
+          cat ollama.log || true
+
+      - name: Pull selected AI model
+        run: |
+          ollama pull "${{ github.event.inputs.ai_model }}"
+
+      - name: Create ULTRA GOD MODE engine
+        run: |
+          mkdir -p .ultra
+
+          cat > .ultra/engine.py <<'PY'
+          import os
+          import re
+          import json
+          import subprocess
+          from pathlib import Path
+
+          MODEL = os.environ["AI_MODEL"]
+          APP_PROMPT = os.environ["APP_PROMPT"]
+          PACKAGE_NAME = os.environ["PACKAGE_NAME"]
+          APP_NAME = os.environ["APP_NAME"]
+          PACKAGE_PATH = PACKAGE_NAME.replace(".", "/")
+          ROOT = Path(".")
+          ULTRA = Path(".ultra")
+          ULTRA.mkdir(exist_ok=True)
+
+          def run_ollama(prompt: str, out_file: str) -> str:
+              path = ULTRA / out_file
+              print(f"Running model -> {out_file}")
+              result = subprocess.run(
+                  ["ollama", "run", MODEL],
+                  input=prompt,
+                  text=True,
+                  capture_output=True,
+                  timeout=900
+              )
+              output = (result.stdout or "") + "\n" + (result.stderr or "")
+              path.write_text(output, errors="ignore")
+              return output
+
+          def extract_code(text: str) -> str:
+              fence = re.search(r"```(?:kotlin|kt|xml|gradle|properties|toml|txt|text)?\n(.*?)```", text, re.DOTALL)
+              if fence:
+                  return fence.group(1).strip() + "\n"
+              return text.strip() + "\n"
+
+          def safe_write(path: str, content: str):
+              path = path.strip().replace("\\", "/")
+              if path.startswith("/") or ".." in Path(path).parts:
+                  print(f"Unsafe path skipped: {path}")
+                  return
+              p = ROOT / path
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(content, errors="ignore")
+              print(f"Wrote {path}")
+
+          def fallback_project():
+              print("Creating fallback production Android project...")
+              safe_write("settings.gradle.kts", f'''
+          pluginManagement {{
+              repositories {{
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }}
+          }}
+
+          dependencyResolutionManagement {{
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {{
+                  google()
+                  mavenCentral()
+              }}
+          }}
+
+          rootProject.name = "{APP_NAME.replace('"', '')}"
+          include(":app")
+          ''')
+
+              safe_write("build.gradle.kts", '''
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          ''')
+
+              safe_write("app/build.gradle.kts", f'''
+          plugins {{
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }}
+
+          android {{
+              namespace = "{PACKAGE_NAME}"
+              compileSdk = 36
+
+              defaultConfig {{
+                  applicationId = "{PACKAGE_NAME}"
+                  minSdk = 26
+                  targetSdk = 36
+                  versionCode = 1
+                  versionName = "1.0"
+              }}
+
+              buildFeatures {{
+                  compose = true
+              }}
+
+              composeOptions {{
+                  kotlinCompilerExtensionVersion = "1.5.14"
+              }}
+
+              kotlinOptions {{
+                  jvmTarget = "17"
+              }}
+          }}
+
+          dependencies {{
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.activity:activity-compose:1.9.2")
+              implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-tooling-preview")
+              implementation("androidx.compose.material3:material3")
+              debugImplementation("androidx.compose.ui:ui-tooling")
+          }}
+          ''')
+
+              safe_write("app/src/main/AndroidManifest.xml", f'''
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:theme="@style/AppTheme"
+                  android:label="{APP_NAME}"
+                  android:allowBackup="true"
+                  android:supportsRtl="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          ''')
+
+              safe_write("app/src/main/res/values/styles.xml", '''
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar" />
+          </resources>
+          ''')
+
+              safe_write(f"app/src/main/java/{PACKAGE_PATH}/MainActivity.kt", f'''
+          package {PACKAGE_NAME}
+
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+
+          class MainActivity : ComponentActivity() {{
+              override fun onCreate(savedInstanceState: Bundle?) {{
+                  super.onCreate(savedInstanceState)
+                  setContent {{
+                      MaterialTheme {{
+                          Surface(modifier = Modifier.fillMaxSize()) {{
+                              UltraApp()
+                          }}
+                      }}
+                  }}
+              }}
+          }}
+
+          @Composable
+          fun UltraApp() {{
+              var text by remember {{ mutableStateOf("") }}
+              var items by remember {{
+                  mutableStateOf(
+                      listOf(
+                          "Production-ready Compose shell",
+                          "Material 3 interface",
+                          "Generated by ULTRA GOD MODE",
+                          "Prompt: {APP_PROMPT[:90].replace('"', "'")}"
+                      )
+                  )
+              }}
+
+              Column(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .padding(20.dp),
+                  verticalArrangement = Arrangement.spacedBy(16.dp)
+              ) {{
+                  Text(
+                      text = "{APP_NAME}",
+                      style = MaterialTheme.typography.headlineLarge,
+                      fontWeight = FontWeight.Bold
+                  )
+
+                  Text(
+                      text = "AI-generated Android foundation with a polished Compose UI.",
+                      style = MaterialTheme.typography.bodyLarge
+                  )
+
+                  OutlinedTextField(
+                      value = text,
+                      onValueChange = {{ text = it }},
+                      modifier = Modifier.fillMaxWidth(),
+                      label = {{ Text("Add item") }}
+                  )
+
+                  Button(
+                      onClick = {{
+                          if (text.isNotBlank()) {{
+                              items = listOf(text.trim()) + items
+                              text = ""
+                          }}
+                      }},
+                      modifier = Modifier.fillMaxWidth()
+                  ) {{
+                      Text("Add")
+                  }}
+
+                  LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {{
+                      items(items) {{ item ->
+                          Card(
+                              shape = RoundedCornerShape(20.dp),
+                              modifier = Modifier.fillMaxWidth()
+                          ) {{
+                              Row(
+                                  modifier = Modifier.padding(18.dp),
+                                  verticalAlignment = Alignment.CenterVertically
+                              ) {{
+                                  Text(item, style = MaterialTheme.typography.bodyLarge)
+                              }}
+                          }}
+                      }}
+                  }}
+              }}
+          }}
+          ''')
+
+          def create_manifest_list():
+              required = [
+                  "settings.gradle.kts",
+                  "build.gradle.kts",
+                  "app/build.gradle.kts",
+                  "app/src/main/AndroidManifest.xml",
+                  f"app/src/main/java/{PACKAGE_PATH}/MainActivity.kt",
+                  f"app/src/main/java/{PACKAGE_PATH}/ui/theme/Theme.kt",
+                  f"app/src/main/java/{PACKAGE_PATH}/ui/home/HomeScreen.kt",
+                  f"app/src/main/java/{PACKAGE_PATH}/ui/home/HomeViewModel.kt",
+              ]
+
+              prompt = f"""
+          You are an Android project architect.
+
+          Create a JSON array of file paths needed for a complete Kotlin Jetpack Compose Android app.
+
+          App name: {APP_NAME}
+          Package name: {PACKAGE_NAME}
+          Package path: app/src/main/java/{PACKAGE_PATH}
+
+          User app request:
+          {APP_PROMPT}
+
+          Rules:
+          - Return ONLY JSON array.
+          - Include Gradle files.
+          - Include Manifest.
+          - Include MainActivity.
+          - Include theme files.
+          - Include screens, ViewModels, models, repositories if useful.
+          - Keep total file count between 8 and 18.
+          - Use only Kotlin, XML, Gradle Kotlin DSL.
+
+          Mandatory starting files:
+          {json.dumps(required, indent=2)}
+          """
+              out = run_ollama(prompt, "01_manifest_raw.txt")
+              try:
+                  arr_match = re.search(r"\[.*\]", out, re.DOTALL)
+                  files = json.loads(arr_match.group(0)) if arr_match else required
+              except Exception:
+                  files = required
+
+              cleaned = []
+              for f in files:
+                  if isinstance(f, str):
+                      f = f.strip().replace("\\", "/")
+                      if f and not f.startswith("/") and ".." not in Path(f).parts:
+                          cleaned.append(f)
+
+              for f in required:
+                  if f not in cleaned:
+                      cleaned.append(f)
+
+              cleaned = cleaned[:22]
+              (ULTRA / "manifest.json").write_text(json.dumps(cleaned, indent=2))
+              print("Manifest files:")
+              print(json.dumps(cleaned, indent=2))
+              return cleaned
+
+          def generate_file(file_path: str, all_files: list[str]):
+              ext = Path(file_path).suffix.lower()
+              lang = "kotlin"
+              if ext == ".xml":
+                  lang = "xml"
+              elif ext == ".properties":
+                  lang = "properties"
+              elif ext == ".toml":
+                  lang = "toml"
+
+              prompt = f"""
+          You are a senior Android engineer.
+
+          Generate ONE complete file for a production Android app.
+
+          App name: {APP_NAME}
+          Package name: {PACKAGE_NAME}
+          User request: {APP_PROMPT}
+
+          Full project file list:
+          {json.dumps(all_files, indent=2)}
+
+          Current file to generate:
+          {file_path}
+
+          Requirements:
+          - Output ONLY this file's code.
+          - No markdown explanation outside code.
+          - Kotlin + Jetpack Compose + Material 3.
+          - MVVM where applicable.
+          - Compile SDK 36.
+          - Min SDK 26.
+          - Java 17.
+          - Gradle Kotlin DSL.
+          - Use package {PACKAGE_NAME} for Kotlin files.
+          - No fake dependencies.
+          - No TODO placeholders.
+          - Keep implementation realistic and buildable.
+          """
+              out_name = "file_" + re.sub(r"[^a-zA-Z0-9]+", "_", file_path) + ".txt"
+              out = run_ollama(prompt, out_name)
+              content = extract_code(out)
+
+              if file_path.endswith(".kt") and f"package {PACKAGE_NAME}" not in content:
+                  if "app/src/main/java/" in file_path:
+                      content = f"package {PACKAGE_NAME}\n\n" + re.sub(r"^\s*package\s+[\w.]+\s*", "", content)
+
+              safe_write(file_path, content)
+
+          def validate_minimum():
+              required = [
+                  "settings.gradle.kts",
+                  "build.gradle.kts",
+                  "app/build.gradle.kts",
+                  "app/src/main/AndroidManifest.xml",
+                  f"app/src/main/java/{PACKAGE_PATH}/MainActivity.kt",
+              ]
+              missing = [f for f in required if not Path(f).exists()]
+              return missing
+
+          def generate_project():
+              files = create_manifest_list()
+              for f in files:
+                  generate_file(f, files)
+
+              missing = validate_minimum()
+              if missing:
+                  print("Missing critical files. Activating fallback.")
+                  print(missing)
+                  fallback_project()
+
+          if __name__ == "__main__":
+              generate_project()
+          PY
+
+          cat > .ultra/fix.py <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          MODEL = os.environ["AI_MODEL"]
+          PACKAGE_NAME = os.environ["PACKAGE_NAME"]
+          APP_NAME = os.environ["APP_NAME"]
+
+          def run_ollama(prompt: str) -> str:
+              result = subprocess.run(
+                  ["ollama", "run", MODEL],
+                  input=prompt,
+                  text=True,
+                  capture_output=True,
+                  timeout=900
+              )
+              return (result.stdout or "") + "\n" + (result.stderr or "")
+
+          def write_files_from_blocks(text: str) -> int:
+              pattern = re.compile(
+                  r"FILE:\s*(.*?)\n```(?:kotlin|kt|xml|gradle|properties|toml|txt|text)?\n(.*?)```",
+                  re.DOTALL
+              )
+              matches = pattern.findall(text)
+              count = 0
+              for raw_path, content in matches:
+                  path = raw_path.strip().replace("\\", "/")
+                  if path.startswith("/") or ".." in Path(path).parts:
+                      continue
+                  p = Path(path)
+                  p.parent.mkdir(parents=True, exist_ok=True)
+                  p.write_text(content.strip() + "\n", errors="ignore")
+                  print(f"Fixed {path}")
+                  count += 1
+              return count
+
+          files = []
+          for p in Path(".").rglob("*"):
+              s = str(p)
+              if p.is_file() and ".git" not in s and ".gradle" not in s and "/build/" not in s and ".ultra" not in s:
+                  files.append(s)
+
+          build_log = ""
+          for name in [".ultra/build.log", ".ultra/build_error.log"]:
+              if Path(name).exists():
+                  build_log += Path(name).read_text(errors="ignore") + "\n"
+
+          prompt = f"""
+          You are ULTRA GOD MODE Android build fixer.
+
+          The Android project failed to build.
+
+          App name: {APP_NAME}
+          Package name: {PACKAGE_NAME}
+
+          Return ONLY changed files using:
+
+          FILE: path/to/file
+          ```kotlin
+          full corrected file content
+          ```
+
+          Rules:
+          - Full files only.
+          - No explanations.
+          - Fix Gradle/Kotlin/Compose/Manifest/import/version errors.
+          - Keep project buildable with ./gradlew assembleDebug.
+          - Do not invent unavailable dependencies.
+          - Prefer simple stable Compose code.
+
+          Existing file tree:
+          {chr(10).join(files)}
+
+          Build error:
+          {build_log[-18000:]}
+          """
+
+          output = run_ollama(prompt)
+          Path(".ultra/fix_output.txt").write_text(output, errors="ignore")
+          count = write_files_from_blocks(output)
+
+          if count == 0:
+              print("No valid fix blocks returned.")
+              raise SystemExit(1)
+          PY
+
+      - name: Generate project file-by-file
+        env:
+          AI_MODEL: ${{ github.event.inputs.ai_model }}
+          APP_PROMPT: ${{ github.event.inputs.app_prompt }}
+          PACKAGE_NAME: ${{ github.event.inputs.package_name }}
+          APP_NAME: ${{ github.event.inputs.app_name }}
+        run: |
+          python3 .ultra/engine.py
+
+      - name: Create Gradle wrapper
+        run: |
+          if [ ! -f ./gradlew ]; then
+            gradle wrapper --gradle-version 8.10.2 || true
+          fi
+
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+          fi
+
+      - name: Self-healing build loop
+        env:
+          AI_MODEL: ${{ github.event.inputs.ai_model }}
+          PACKAGE_NAME: ${{ github.event.inputs.package_name }}
+          APP_NAME: ${{ github.event.inputs.app_name }}
+        run: |
+          set +e
+
+          ATTEMPTS="${{ github.event.inputs.max_fix_attempts }}"
+          COUNT=0
+
+          while [ "$COUNT" -lt "$ATTEMPTS" ]; do
+            COUNT=$((COUNT + 1))
+
+            echo "====================================================="
+            echo "Build attempt $COUNT of $ATTEMPTS"
+            echo "====================================================="
+
+            if [ ! -f ./gradlew ]; then
+              gradle wrapper --gradle-version 8.10.2 || true
+              chmod +x ./gradlew 2>/dev/null || true
+            fi
+
+            if [ ! -f ./gradlew ]; then
+              echo "gradlew missing."
+              exit 1
+            fi
+
+            ./gradlew clean assembleDebug --stacktrace > .ultra/build.log 2> .ultra/build_error.log
+            STATUS=$?
+
+            if [ "$STATUS" -eq 0 ]; then
+              echo "Build successful."
+              exit 0
+            fi
+
+            echo "Build failed. Fixing with AI..."
+            tail -200 .ultra/build_error.log || true
+
+            python3 .ultra/fix.py || true
+          done
+
+          echo "Build failed after all attempts."
+          exit 1
+
+      - name: Create report
+        if: always()
+        run: |
+          cat > BUILD_REPORT.md <<EOF
+          # ULTRA GOD MODE Android Build Report
+
+          ## App Name
+          ${{ github.event.inputs.app_name }}
+
+          ## Package Name
+          ${{ github.event.inputs.package_name }}
+
+          ## AI Model
+          ${{ github.event.inputs.ai_model }}
+
+          ## Prompt
+          ${{ github.event.inputs.app_prompt }}
+
+          ## Date
+          $(date)
+
+          ## Artifacts
+          - APK artifact: ultra-god-mode-android-apk
+          - Logs artifact: ultra-god-mode-logs
+          EOF
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultra-god-mode-android-apk
+          path: |
+            **/build/outputs/apk/debug/*.apk
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultra-god-mode-logs
+          path: |
+            .ultra/
+            BUILD_REPORT.md
+            **/build/outputs/apk/debug/*.apk
+
+      - name: Commit generated project
+        if: always()
+        run: |
+          git config user.name "ULTRA GOD MODE Android Builder"
+          git config user.email "actions@github.com"
+
+          git add .
+          git commit -m "Generate Android app with ULTRA GOD MODE" || echo "No changes to commit"
+          git push || echo "Push skipped or failed"
