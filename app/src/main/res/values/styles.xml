@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.NotesApp" parent="Theme.Material3.DayNight">
+        <!-- Customize your theme here. -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primary_dark</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item[61D[K
+name="android:textColorSecondary">@color/text_secondary</item>
+    </style>
+
+    <style name="Theme.NotesApp.NoActionBar">
+        <item name="windowNoTitle">true</item>
+        <item name="windowActionBar">false</item>
+    </style>
+
+    <style name="Widget.NotesApp.NoteCard" parent="Widget.Material3.Card">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">16dp</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.M3.Card</item>
+    </style>
+
+    <color name="primary">#0D47A1</color>
+    <color name="primary_dark">#0C3895</color>
+    <color name="accent">#FFEB3B</color>
+    <color name="background">#FFFFFF</color>
+    <color name="text_primary">#212121</color>
+    <color name="text_secondary">#757575</color>
+
+    <style name="ShapeAppearance.M3.Card">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+</resources>

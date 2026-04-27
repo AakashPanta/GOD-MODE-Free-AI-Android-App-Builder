@@ -1,0 +1,18 @@
+[
+  "settings.gradle.kts",
+  "build.gradle.kts",
+  "app/build.gradle.kts",
+  "app/src/main/AndroidManifest.xml",
+  "app/src/main/java/com/notes/app/MainActivity.kt",
+  "app/src/main/java/com/notes/app/ui/theme/Theme.kt",
+  "app/src/main/java/com/notes/app/ui/home/HomeScreen.kt",
+  "app/src/main/java/com/notes/app/ui/home/HomeViewModel.kt",
+  "app/src/main/java/com/notes/app/model/Note.kt",
+  "app/src/main/java/com/notes/app/repository/NoteRepository.kt",
+  "app/src/main/java/com/notes/app/ui/note/NoteScreen.kt",
+  "app/src/main/java/com/notes/app/ui/note/NoteViewModel.kt",
+  "app/src/main/java/com/notes/app/ui/folder/FolderScreen.kt",
+  "app/src/main/java/com/notes/app/ui/folder/FolderViewModel.kt",
+  "app/src/main/res/values/colors.xml",
+  "app/src/main/res/values/styles.xml"
+]

@@ -1,0 +1,20 @@
+package com.notes.app.model
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+import java.util.*
+
+@Entity(tableName = "notes")
+data class Note(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String = "",
+    val body: String = "",
+    val tags: List<String> = emptyList(),
+    val colorLabel: Int? = null,
+    val priority: Int = 1, // 1 for high, 2 for medium, 3 for low
+    var isPinned: Boolean = false,
+    var isArchived: Boolean = false,
+    var isStarred: Boolean = false,
+    val createdAt: Date = Date(),
+    val lastEditedAt: Date = Date()
+)

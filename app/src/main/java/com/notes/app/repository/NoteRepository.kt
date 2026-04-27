@@ -1,0 +1,39 @@
+package com.notes.app.repository
+
+import androidx.lifecycle.LiveData
+import com.notes.app.model.Note
+import java.util.*
+
+class NoteRepository(private val noteDao: NoteDao) {
+
+    fun getAllNotes(): LiveData<List<Note>> {
+        return noteDao.getAllNotes()
+    }
+
+    suspend fun insertNote(note: Note) {
+        noteDao.insertNote(note)
+    }
+
+    suspend fun updateNote(note: Note) {
+        noteDao.updateNote(note)
+    }
+
+    suspend fun deleteNote(note: Note) {
+        noteDao.deleteNote(note)
+    }
+
+    suspend fun duplicateNote(note: Note): Note {
+        val newNote = note.copy(id = UUID.randomUUID().toString(), isPinned[8D[K
+isPinned = false, isArchived = false)
+        insertNote(newNote)
+        return newNote
+    }
+
+    fun getNotesByFolder(folderId: String): LiveData<List<Note>> {
+        return noteDao.getNotesByFolder(folderId)
+    }
+
+    fun searchNotes(query: String): LiveData<List<Note>> {
+        return noteDao.searchNotes(query)
+    }
+}
