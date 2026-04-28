@@ -1,5 +1,6 @@
 package com.notes.app
 
+import android.app.Application
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,19 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteForever
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.NoteAlt
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Restore
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,8 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -67,7 +59,62 @@ enum class Screen {
     HOME, EDITOR, ARCHIVE, TRASH, SETTINGS
 }
 
-class NotesViewModel : ViewModel() {
+class NotesStore(private val file: File) {
+    fun load(): List<Note> {
+        return try {
+            if (!file.exists()) return emptyList()
+
+            val array = JSONArray(file.readText())
+
+            List(array.length()) { index ->
+                val item = array.getJSONObject(index)
+
+                Note(
+                    id = item.optString("id", UUID.randomUUID().toString()),
+                    title = item.optString("title", "Untitled Note"),
+                    body = item.optString("body", ""),
+                    folder = item.optString("folder", "Personal"),
+                    tag = item.optString("tag", "General"),
+                    pinned = item.optBoolean("pinned", false),
+                    favorite = item.optBoolean("favorite", false),
+                    archived = item.optBoolean("archived", false),
+                    trashed = item.optBoolean("trashed", false),
+                    updatedAt = item.optString("updatedAt", now())
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun save(notes: List<Note>) {
+        val array = JSONArray()
+
+        notes.forEach { note ->
+            array.put(
+                JSONObject().apply {
+                    put("id", note.id)
+                    put("title", note.title)
+                    put("body", note.body)
+                    put("folder", note.folder)
+                    put("tag", note.tag)
+                    put("pinned", note.pinned)
+                    put("favorite", note.favorite)
+                    put("archived", note.archived)
+                    put("trashed", note.trashed)
+                    put("updatedAt", note.updatedAt)
+                }
+            )
+        }
+
+        file.parentFile?.mkdirs()
+        file.writeText(array.toString(2))
+    }
+}
+
+class NotesViewModel(application: Application) : AndroidViewModel(application) {
+    private val store = NotesStore(File(application.filesDir, "notes.json"))
+
     var screen by mutableStateOf(Screen.HOME)
         private set
 
@@ -77,25 +124,35 @@ class NotesViewModel : ViewModel() {
     var query by mutableStateOf("")
         private set
 
-    var notes by mutableStateOf(
-        listOf(
-            Note(
-                title = "Welcome to Notes",
-                body = "A stable production-style offline notes app built with Kotlin, Jetpack Compose, Material 3, and MVVM.",
-                folder = "Inbox",
-                tag = "Start",
-                pinned = true
-            ),
-            Note(
-                title = "Premium dashboard",
-                body = "Create, edit, pin, favorite, archive, restore, duplicate, search, and delete notes.",
-                folder = "Productivity",
-                tag = "UI",
-                favorite = true
-            )
-        )
-    )
+    var notes by mutableStateOf(loadInitialNotes())
         private set
+
+    private fun loadInitialNotes(): List<Note> {
+        val saved = store.load()
+
+        return saved.ifEmpty {
+            listOf(
+                Note(
+                    title = "Welcome to Notes",
+                    body = "This app now saves notes permanently on your device using local JSON storage.",
+                    folder = "Inbox",
+                    tag = "Start",
+                    pinned = true
+                ),
+                Note(
+                    title = "Persistent storage enabled",
+                    body = "Create a note, close the app, reopen it, and your notes will still be here.",
+                    folder = "Productivity",
+                    tag = "Storage",
+                    favorite = true
+                )
+            )
+        }
+    }
+
+    private fun persist() {
+        store.save(notes)
+    }
 
     val activeNotes: List<Note>
         get() = notes.filter { !it.trashed && !it.archived }
@@ -168,18 +225,21 @@ class NotesViewModel : ViewModel() {
 
         selectedNote = null
         screen = Screen.HOME
+        persist()
     }
 
     fun togglePin(note: Note) {
         notes = notes.map {
             if (it.id == note.id) it.copy(pinned = !it.pinned, updatedAt = now()) else it
         }
+        persist()
     }
 
     fun toggleFavorite(note: Note) {
         notes = notes.map {
             if (it.id == note.id) it.copy(favorite = !it.favorite, updatedAt = now()) else it
         }
+        persist()
     }
 
     fun duplicate(note: Note) {
@@ -190,28 +250,33 @@ class NotesViewModel : ViewModel() {
                 updatedAt = now()
             )
         ) + notes
+        persist()
     }
 
     fun archive(note: Note) {
         notes = notes.map {
             if (it.id == note.id) it.copy(archived = true, trashed = false, updatedAt = now()) else it
         }
+        persist()
     }
 
     fun moveToTrash(note: Note) {
         notes = notes.map {
             if (it.id == note.id) it.copy(trashed = true, archived = false, updatedAt = now()) else it
         }
+        persist()
     }
 
     fun restore(note: Note) {
         notes = notes.map {
             if (it.id == note.id) it.copy(trashed = false, archived = false, updatedAt = now()) else it
         }
+        persist()
     }
 
     fun deleteForever(note: Note) {
         notes = notes.filterNot { it.id == note.id }
+        persist()
     }
 }
 
@@ -511,7 +576,7 @@ fun SettingsScreen(vm: NotesViewModel) {
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text("Offline-first", fontWeight = FontWeight.Bold)
-                Text("This stable version keeps notes in memory and requires no backend or API key.")
+                Text("Notes are now saved permanently on this device using local JSON storage.")
             }
         }
 
@@ -520,8 +585,8 @@ fun SettingsScreen(vm: NotesViewModel) {
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("Tech Stack", fontWeight = FontWeight.Bold)
-                Text("Kotlin, Jetpack Compose, Material 3, MVVM, Java 17, Android SDK 36.")
+                Text("Storage", fontWeight = FontWeight.Bold)
+                Text("Data file: notes.json inside private app storage.")
             }
         }
 
