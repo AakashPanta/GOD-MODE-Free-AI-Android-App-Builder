@@ -1,0 +1,1459 @@
+name: Notes V3 Feature Upgrade
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: "Android versionCode"
+        required: true
+        default: "3"
+        type: string
+      version_name:
+        description: "Android versionName"
+        required: true
+        default: "3.0.0"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  v3:
+    name: Upgrade Notes to V3 and Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      ANDROID_SDK_ROOT: /opt/android-sdk
+      ANDROID_USER_HOME: /home/runner/.android
+      GRADLE_USER_HOME: /home/runner/.gradle
+      JAVA_TOOL_OPTIONS: -Duser.home=/home/runner
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare environment
+        run: |
+          mkdir -p "$ANDROID_USER_HOME" "$GRADLE_USER_HOME" build-logs app/signing
+          chmod -R 777 "$ANDROID_USER_HOME" "$GRADLE_USER_HOME"
+
+      - name: Install packages
+        run: |
+          sudo apt update
+          sudo apt install -y curl wget unzip zip git openjdk-17-jdk gradle python3
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Android SDK
+        run: |
+          sudo mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd /tmp
+
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip
+
+          sudo rm -rf "$ANDROID_HOME/cmdline-tools/latest"
+          sudo mv cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
+
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+          yes | sudo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
+          sudo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
+
+      - name: Apply Notes V3 source-inspired features
+        env:
+          VERSION_CODE: ${{ github.event.inputs.version_code }}
+          VERSION_NAME: ${{ github.event.inputs.version_name }}
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import os
+
+          version_code = os.environ["VERSION_CODE"]
+          version_name = os.environ["VERSION_NAME"]
+
+          base = Path("app/src/main/java/com/notes/app")
+
+          def write(path, content):
+              p = Path(path)
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(content.strip() + "\n")
+
+          write("settings.gradle.kts", """
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "Notes"
+          include(":app")
+          """)
+
+          write("build.gradle.kts", """
+          plugins {
+              id("com.android.application") version "8.3.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+          }
+          """)
+
+          write("gradle.properties", """
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          kotlin.code.style=official
+          """)
+
+          write("app/build.gradle.kts", f"""
+          plugins {{
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }}
+
+          android {{
+              namespace = "com.notes.app"
+              compileSdk = 34
+
+              defaultConfig {{
+                  applicationId = "com.notes.app"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = {version_code}
+                  versionName = "{version_name}"
+              }}
+
+              signingConfigs {{
+                  create("release") {{
+                      storeFile = file("signing/notes-release.jks")
+                      storePassword = "notespassword"
+                      keyAlias = "noteskey"
+                      keyPassword = "notespassword"
+                  }}
+              }}
+
+              buildTypes {{
+                  debug {{
+                      applicationIdSuffix = ".debug"
+                      versionNameSuffix = "-debug"
+                  }}
+
+                  release {{
+                      isMinifyEnabled = false
+                      isShrinkResources = false
+                      signingConfig = signingConfigs.getByName("release")
+                  }}
+              }}
+
+              buildFeatures {{
+                  compose = true
+              }}
+
+              composeOptions {{
+                  kotlinCompilerExtensionVersion = "1.5.10"
+              }}
+
+              compileOptions {{
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }}
+
+              kotlinOptions {{
+                  jvmTarget = "17"
+              }}
+          }}
+
+          dependencies {{
+              implementation("androidx.core:core-ktx:1.12.0")
+              implementation("androidx.activity:activity-compose:1.8.2")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+
+              implementation(platform("androidx.compose:compose-bom:2024.02.01"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-tooling-preview")
+              implementation("androidx.compose.foundation:foundation")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.material:material-icons-extended")
+
+              debugImplementation("androidx.compose.ui:ui-tooling")
+          }}
+          """)
+
+          write("app/src/main/AndroidManifest.xml", """
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:allowBackup="true"
+                  android:label="Notes"
+                  android:supportsRtl="true"
+                  android:theme="@style/AppTheme">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          """)
+
+          write("app/src/main/res/values/styles.xml", """
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar"/>
+          </resources>
+          """)
+
+          write("app/src/main/res/values-night/styles.xml", """
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar"/>
+          </resources>
+          """)
+
+          write(base / "MainActivity.kt", """
+          package com.notes.app
+
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.lifecycle.viewmodel.compose.viewModel
+          import com.notes.app.ui.NotesApp
+          import com.notes.app.ui.theme.NotesTheme
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContent {
+                      val vm: NotesViewModel = viewModel()
+                      NotesTheme(themeName = vm.themeName, darkTheme = vm.darkTheme) {
+                          NotesApp(vm = vm)
+                      }
+                  }
+              }
+          }
+          """)
+
+          write(base / "Note.kt", """
+          package com.notes.app
+
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+          import java.util.UUID
+
+          data class Note(
+              val id: String = UUID.randomUUID().toString(),
+              val title: String,
+              val body: String,
+              val label: String = "Personal",
+              val tags: String = "General",
+              val color: Long = 0xFF8EA7FF,
+              val pinned: Boolean = false,
+              val favorite: Boolean = false,
+              val archived: Boolean = false,
+              val trashed: Boolean = false,
+              val locked: Boolean = false,
+              val updatedAt: String = now()
+          )
+
+          fun now(): String {
+              return SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date())
+          }
+
+          enum class Screen {
+              LOCK, ONBOARDING, HOME, EDITOR, LABELS, FAVORITES, ARCHIVE, TRASH, SETTINGS, EXPORT_IMPORT, ABOUT
+          }
+
+          enum class ViewMode {
+              LIST, GRID
+          }
+
+          enum class SortMode {
+              UPDATED, TITLE, LABEL
+          }
+          """)
+
+          write(base / "NotesStore.kt", """
+          package com.notes.app
+
+          import android.content.Context
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.io.File
+          import java.util.UUID
+
+          class NotesStore(context: Context) {
+              private val notesFile = File(context.filesDir, "notes-v3.json")
+              private val exportFile = File(context.filesDir, "notes-export.json")
+              private val prefs = context.getSharedPreferences("notes_v3_settings", Context.MODE_PRIVATE)
+
+              fun hasCompletedOnboarding(): Boolean {
+                  return prefs.getBoolean("onboarding_done", false)
+              }
+
+              fun setOnboardingDone() {
+                  prefs.edit().putBoolean("onboarding_done", true).apply()
+              }
+
+              fun isDarkTheme(): Boolean {
+                  return prefs.getBoolean("dark_theme", true)
+              }
+
+              fun setDarkTheme(value: Boolean) {
+                  prefs.edit().putBoolean("dark_theme", value).apply()
+              }
+
+              fun themeName(): String {
+                  return prefs.getString("theme_name", "Indigo") ?: "Indigo"
+              }
+
+              fun setThemeName(value: String) {
+                  prefs.edit().putString("theme_name", value).apply()
+              }
+
+              fun viewMode(): ViewMode {
+                  return if (prefs.getString("view_mode", "LIST") == "GRID") ViewMode.GRID else ViewMode.LIST
+              }
+
+              fun setViewMode(value: ViewMode) {
+                  prefs.edit().putString("view_mode", value.name).apply()
+              }
+
+              fun sortMode(): SortMode {
+                  return when (prefs.getString("sort_mode", "UPDATED")) {
+                      "TITLE" -> SortMode.TITLE
+                      "LABEL" -> SortMode.LABEL
+                      else -> SortMode.UPDATED
+                  }
+              }
+
+              fun setSortMode(value: SortMode) {
+                  prefs.edit().putString("sort_mode", value.name).apply()
+              }
+
+              fun appLockEnabled(): Boolean {
+                  return prefs.getBoolean("lock_enabled", false)
+              }
+
+              fun setAppLockEnabled(value: Boolean) {
+                  prefs.edit().putBoolean("lock_enabled", value).apply()
+              }
+
+              fun lockPin(): String {
+                  return prefs.getString("lock_pin", "1234") ?: "1234"
+              }
+
+              fun setLockPin(value: String) {
+                  prefs.edit().putString("lock_pin", value).apply()
+              }
+
+              fun loadNotes(): List<Note> {
+                  return try {
+                      if (!notesFile.exists()) return emptyList()
+                      decodeNotes(notesFile.readText())
+                  } catch (_: Exception) {
+                      emptyList()
+                  }
+              }
+
+              fun saveNotes(notes: List<Note>) {
+                  notesFile.writeText(encodeNotes(notes))
+              }
+
+              fun exportNotes(notes: List<Note>): String {
+                  val data = encodeNotes(notes)
+                  exportFile.writeText(data)
+                  return exportFile.absolutePath
+              }
+
+              fun importFromLastExport(): List<Note> {
+                  return try {
+                      if (!exportFile.exists()) emptyList() else decodeNotes(exportFile.readText())
+                  } catch (_: Exception) {
+                      emptyList()
+                  }
+              }
+
+              private fun encodeNotes(notes: List<Note>): String {
+                  val array = JSONArray()
+                  notes.forEach { note ->
+                      array.put(
+                          JSONObject().apply {
+                              put("id", note.id)
+                              put("title", note.title)
+                              put("body", note.body)
+                              put("label", note.label)
+                              put("tags", note.tags)
+                              put("color", note.color)
+                              put("pinned", note.pinned)
+                              put("favorite", note.favorite)
+                              put("archived", note.archived)
+                              put("trashed", note.trashed)
+                              put("locked", note.locked)
+                              put("updatedAt", note.updatedAt)
+                          }
+                      )
+                  }
+                  return array.toString(2)
+              }
+
+              private fun decodeNotes(raw: String): List<Note> {
+                  val array = JSONArray(raw)
+
+                  return List(array.length()) { index ->
+                      val item = array.getJSONObject(index)
+                      Note(
+                          id = item.optString("id", UUID.randomUUID().toString()),
+                          title = item.optString("title", "Untitled Note"),
+                          body = item.optString("body", ""),
+                          label = item.optString("label", item.optString("folder", "Personal")),
+                          tags = item.optString("tags", item.optString("tag", "General")),
+                          color = item.optLong("color", 0xFF8EA7FF),
+                          pinned = item.optBoolean("pinned", false),
+                          favorite = item.optBoolean("favorite", false),
+                          archived = item.optBoolean("archived", false),
+                          trashed = item.optBoolean("trashed", false),
+                          locked = item.optBoolean("locked", false),
+                          updatedAt = item.optString("updatedAt", now())
+                      )
+                  }
+              }
+          }
+          """)
+
+          write(base / "NotesViewModel.kt", """
+          package com.notes.app
+
+          import android.app.Application
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.setValue
+          import androidx.lifecycle.AndroidViewModel
+          import java.util.UUID
+
+          class NotesViewModel(application: Application) : AndroidViewModel(application) {
+              private val store = NotesStore(application)
+
+              var unlocked by mutableStateOf(!store.appLockEnabled())
+                  private set
+
+              var screen by mutableStateOf(
+                  if (store.appLockEnabled()) Screen.LOCK else if (store.hasCompletedOnboarding()) Screen.HOME else Screen.ONBOARDING
+              )
+                  private set
+
+              var selectedNote by mutableStateOf<Note?>(null)
+                  private set
+
+              var query by mutableStateOf("")
+                  private set
+
+              var selectedLabel by mutableStateOf("All")
+                  private set
+
+              var darkTheme by mutableStateOf(store.isDarkTheme())
+                  private set
+
+              var themeName by mutableStateOf(store.themeName())
+                  private set
+
+              var viewMode by mutableStateOf(store.viewMode())
+                  private set
+
+              var sortMode by mutableStateOf(store.sortMode())
+                  private set
+
+              var showDeleteDialog by mutableStateOf<Note?>(null)
+                  private set
+
+              var exportMessage by mutableStateOf("")
+                  private set
+
+              var notes by mutableStateOf(loadInitialNotes())
+                  private set
+
+              private fun loadInitialNotes(): List<Note> {
+                  val saved = store.loadNotes()
+                  return saved.ifEmpty {
+                      listOf(
+                          Note(
+                              title = "Welcome to Notes V3",
+                              body = "V3 adds labels, lock screen, formatting helpers, import/export, view modes, sort modes, and material themes.",
+                              label = "Inbox",
+                              tags = "Start, V3",
+                              pinned = true
+                          ),
+                          Note(
+                              title = "Formatting toolbar",
+                              body = "Use the editor buttons to insert bold, italic, underline, headings, quotes, links, bullets, numbered lists, dividers, and highlights.",
+                              label = "Writing",
+                              tags = "Editor",
+                              favorite = true
+                          )
+                      )
+                  }
+              }
+
+              private fun persist() {
+                  store.saveNotes(notes)
+              }
+
+              val labels: List<String>
+                  get() = listOf("All") + notes
+                      .filter { !it.trashed && !it.archived }
+                      .map { it.label.ifBlank { "Personal" } }
+                      .distinct()
+                      .sorted()
+
+              val activeNotes: List<Note>
+                  get() = notes.filter { !it.trashed && !it.archived }
+
+              val pinnedNotes: List<Note>
+                  get() = activeNotes.filter { it.pinned }
+
+              val filteredNotes: List<Note>
+                  get() {
+                      val base = when (screen) {
+                          Screen.TRASH -> notes.filter { it.trashed }
+                          Screen.ARCHIVE -> notes.filter { it.archived && !it.trashed }
+                          Screen.FAVORITES -> activeNotes.filter { it.favorite }
+                          else -> activeNotes
+                      }.let { list ->
+                          if (selectedLabel == "All") list else list.filter { it.label == selectedLabel }
+                      }
+
+                      val searched = if (query.isBlank()) {
+                          base
+                      } else {
+                          base.filter {
+                              it.title.contains(query, true) ||
+                                  it.body.contains(query, true) ||
+                                  it.label.contains(query, true) ||
+                                  it.tags.contains(query, true)
+                          }
+                      }
+
+                      return when (sortMode) {
+                          SortMode.TITLE -> searched.sortedBy { it.title.lowercase() }
+                          SortMode.LABEL -> searched.sortedBy { it.label.lowercase() }
+                          SortMode.UPDATED -> searched.sortedWith(compareByDescending<Note> { it.pinned }.thenByDescending { it.updatedAt })
+                      }
+                  }
+
+              fun unlock(pin: String): Boolean {
+                  val ok = pin == store.lockPin()
+                  if (ok) {
+                      unlocked = true
+                      screen = if (store.hasCompletedOnboarding()) Screen.HOME else Screen.ONBOARDING
+                  }
+                  return ok
+              }
+
+              fun finishOnboarding() {
+                  store.setOnboardingDone()
+                  screen = Screen.HOME
+              }
+
+              fun navigate(target: Screen) {
+                  screen = target
+                  if (target != Screen.EDITOR) selectedNote = null
+              }
+
+              fun updateQuery(value: String) {
+                  query = value
+              }
+
+              fun selectLabel(value: String) {
+                  selectedLabel = value
+              }
+
+              fun toggleTheme() {
+                  darkTheme = !darkTheme
+                  store.setDarkTheme(darkTheme)
+              }
+
+              fun setTheme(value: String) {
+                  themeName = value
+                  store.setThemeName(value)
+              }
+
+              fun toggleViewMode() {
+                  viewMode = if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
+                  store.setViewMode(viewMode)
+              }
+
+              fun setSort(value: SortMode) {
+                  sortMode = value
+                  store.setSortMode(value)
+              }
+
+              fun setLock(enabled: Boolean, pin: String) {
+                  store.setAppLockEnabled(enabled)
+                  if (pin.length >= 4) store.setLockPin(pin)
+              }
+
+              fun newNote() {
+                  selectedNote = null
+                  screen = Screen.EDITOR
+              }
+
+              fun edit(note: Note) {
+                  selectedNote = note
+                  screen = Screen.EDITOR
+              }
+
+              fun cancelEdit() {
+                  selectedNote = null
+                  screen = Screen.HOME
+              }
+
+              fun save(title: String, body: String, label: String, tags: String, color: Long, locked: Boolean) {
+                  val cleanTitle = title.ifBlank { "Untitled Note" }
+                  val cleanBody = body.ifBlank { "No content" }
+                  val cleanLabel = label.ifBlank { "Personal" }
+                  val cleanTags = tags.ifBlank { "General" }
+                  val existing = selectedNote
+
+                  notes = if (existing == null) {
+                      listOf(
+                          Note(
+                              title = cleanTitle,
+                              body = cleanBody,
+                              label = cleanLabel,
+                              tags = cleanTags,
+                              color = color,
+                              locked = locked
+                          )
+                      ) + notes
+                  } else {
+                      notes.map {
+                          if (it.id == existing.id) {
+                              it.copy(
+                                  title = cleanTitle,
+                                  body = cleanBody,
+                                  label = cleanLabel,
+                                  tags = cleanTags,
+                                  color = color,
+                                  locked = locked,
+                                  updatedAt = now()
+                              )
+                          } else {
+                              it
+                          }
+                      }
+                  }
+
+                  selectedNote = null
+                  screen = Screen.HOME
+                  persist()
+              }
+
+              fun togglePin(note: Note) {
+                  notes = notes.map { if (it.id == note.id) it.copy(pinned = !it.pinned, updatedAt = now()) else it }
+                  persist()
+              }
+
+              fun toggleFavorite(note: Note) {
+                  notes = notes.map { if (it.id == note.id) it.copy(favorite = !it.favorite, updatedAt = now()) else it }
+                  persist()
+              }
+
+              fun duplicate(note: Note) {
+                  notes = listOf(note.copy(id = UUID.randomUUID().toString(), title = note.title + " Copy", updatedAt = now())) + notes
+                  persist()
+              }
+
+              fun archive(note: Note) {
+                  notes = notes.map { if (it.id == note.id) it.copy(archived = true, trashed = false, updatedAt = now()) else it }
+                  persist()
+              }
+
+              fun requestDelete(note: Note) {
+                  showDeleteDialog = note
+              }
+
+              fun dismissDeleteDialog() {
+                  showDeleteDialog = null
+              }
+
+              fun moveToTrashConfirmed() {
+                  val note = showDeleteDialog ?: return
+                  notes = notes.map { if (it.id == note.id) it.copy(trashed = true, archived = false, updatedAt = now()) else it }
+                  showDeleteDialog = null
+                  persist()
+              }
+
+              fun restore(note: Note) {
+                  notes = notes.map { if (it.id == note.id) it.copy(trashed = false, archived = false, updatedAt = now()) else it }
+                  persist()
+              }
+
+              fun deleteForever(note: Note) {
+                  notes = notes.filterNot { it.id == note.id }
+                  persist()
+              }
+
+              fun exportNotes() {
+                  exportMessage = "Exported to: " + store.exportNotes(notes)
+              }
+
+              fun importLastExport() {
+                  val imported = store.importFromLastExport()
+                  if (imported.isNotEmpty()) {
+                      notes = imported
+                      persist()
+                      exportMessage = "Imported ${imported.size} notes from last export."
+                  } else {
+                      exportMessage = "No export file found yet."
+                  }
+              }
+          }
+          """)
+
+          write(base / "ui/theme/Theme.kt", """
+          package com.notes.app.ui.theme
+
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.darkColorScheme
+          import androidx.compose.material3.lightColorScheme
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.graphics.Color
+
+          private fun darkScheme(themeName: String) = when (themeName) {
+              "Emerald" -> darkColorScheme(primary = Color(0xFF7BE4B2), secondary = Color(0xFFA8F0CF), background = Color(0xFF06110D), surface = Color(0xFF101C17))
+              "Sunset" -> darkColorScheme(primary = Color(0xFFFFB26B), secondary = Color(0xFFFFD0A3), background = Color(0xFF120B08), surface = Color(0xFF211713))
+              "Rose" -> darkColorScheme(primary = Color(0xFFFF9BCB), secondary = Color(0xFFFFC1DC), background = Color(0xFF14070F), surface = Color(0xFF22101A))
+              else -> darkColorScheme(primary = Color(0xFF9DB4FF), secondary = Color(0xFFC6D2FF), background = Color(0xFF090B10), surface = Color(0xFF121722))
+          }
+
+          private fun lightScheme(themeName: String) = when (themeName) {
+              "Emerald" -> lightColorScheme(primary = Color(0xFF007A4D), secondary = Color(0xFF276B50), background = Color(0xFFF3FCF7), surface = Color.White)
+              "Sunset" -> lightColorScheme(primary = Color(0xFFB75B00), secondary = Color(0xFF8F5C2D), background = Color(0xFFFFF7F0), surface = Color.White)
+              "Rose" -> lightColorScheme(primary = Color(0xFFC02769), secondary = Color(0xFF8F4B68), background = Color(0xFFFFF5FA), surface = Color.White)
+              else -> lightColorScheme(primary = Color(0xFF3657D8), secondary = Color(0xFF5C6FAE), background = Color(0xFFF6F7FC), surface = Color.White)
+          }
+
+          @Composable
+          fun NotesTheme(themeName: String, darkTheme: Boolean, content: @Composable () -> Unit) {
+              MaterialTheme(
+                  colorScheme = if (darkTheme) darkScheme(themeName) else lightScheme(themeName),
+                  content = content
+              )
+          }
+          """)
+
+          write(base / "ui/NotesApp.kt", """
+          package com.notes.app.ui
+
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.text.font.FontWeight
+          import com.notes.app.NotesViewModel
+          import com.notes.app.Screen
+          import com.notes.app.ui.screens.*
+
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun NotesApp(vm: NotesViewModel) {
+              when (vm.screen) {
+                  Screen.LOCK -> {
+                      LockScreen(vm)
+                      return
+                  }
+                  Screen.ONBOARDING -> {
+                      OnboardingScreen(vm)
+                      return
+                  }
+                  else -> Unit
+              }
+
+              DeleteConfirmationDialog(vm)
+
+              Scaffold(
+                  topBar = {
+                      LargeTopAppBar(
+                          title = {
+                              Column {
+                                  Text("Notes V3", fontWeight = FontWeight.Bold)
+                                  Text(
+                                      text = "${vm.activeNotes.size} notes • ${vm.themeName} • ${vm.viewMode.name.lowercase()}",
+                                      style = MaterialTheme.typography.labelLarge,
+                                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                                  )
+                              }
+                          },
+                          navigationIcon = {
+                              if (vm.screen == Screen.EDITOR) {
+                                  IconButton(onClick = { vm.cancelEdit() }) {
+                                      Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                                  }
+                              }
+                          },
+                          actions = {
+                              IconButton(onClick = { vm.toggleViewMode() }) {
+                                  Icon(if (vm.viewMode.name == "GRID") Icons.Default.ViewList else Icons.Default.GridView, contentDescription = "View")
+                              }
+                              IconButton(onClick = { vm.toggleTheme() }) {
+                                  Icon(if (vm.darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode, contentDescription = "Theme")
+                              }
+                              IconButton(onClick = { vm.navigate(Screen.SETTINGS) }) {
+                                  Icon(Icons.Default.Settings, contentDescription = "Settings")
+                              }
+                          }
+                      )
+                  },
+                  floatingActionButton = {
+                      if (vm.screen != Screen.EDITOR) {
+                          ExtendedFloatingActionButton(
+                              onClick = { vm.newNote() },
+                              icon = { Icon(Icons.Default.Add, contentDescription = "New note") },
+                              text = { Text("New Note") }
+                          )
+                      }
+                  },
+                  bottomBar = {
+                      if (vm.screen != Screen.EDITOR) {
+                          NavigationBar {
+                              NavigationBarItem(selected = vm.screen == Screen.HOME, onClick = { vm.navigate(Screen.HOME) }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") })
+                              NavigationBarItem(selected = vm.screen == Screen.LABELS, onClick = { vm.navigate(Screen.LABELS) }, icon = { Icon(Icons.Default.Label, null) }, label = { Text("Labels") })
+                              NavigationBarItem(selected = vm.screen == Screen.FAVORITES, onClick = { vm.navigate(Screen.FAVORITES) }, icon = { Icon(Icons.Default.Star, null) }, label = { Text("Stars") })
+                              NavigationBarItem(selected = vm.screen == Screen.SETTINGS, onClick = { vm.navigate(Screen.SETTINGS) }, icon = { Icon(Icons.Default.Tune, null) }, label = { Text("More") })
+                          }
+                      }
+                  }
+              ) { padding ->
+                  Box(modifier = Modifier.padding(padding)) {
+                      when (vm.screen) {
+                          Screen.HOME -> HomeScreen(vm)
+                          Screen.EDITOR -> EditorScreen(vm)
+                          Screen.LABELS -> LabelsScreen(vm)
+                          Screen.FAVORITES -> NotesListScreen(vm, "Favorites")
+                          Screen.ARCHIVE -> NotesListScreen(vm, "Archive")
+                          Screen.TRASH -> NotesListScreen(vm, "Trash")
+                          Screen.SETTINGS -> SettingsScreen(vm)
+                          Screen.EXPORT_IMPORT -> ExportImportScreen(vm)
+                          Screen.ABOUT -> AboutScreen(vm)
+                          else -> HomeScreen(vm)
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun DeleteConfirmationDialog(vm: NotesViewModel) {
+              val note = vm.showDeleteDialog ?: return
+              AlertDialog(
+                  onDismissRequest = { vm.dismissDeleteDialog() },
+                  title = { Text("Move to Trash?") },
+                  text = { Text("“${note.title}” will be moved to Trash. You can restore it later.") },
+                  confirmButton = { Button(onClick = { vm.moveToTrashConfirmed() }) { Text("Move") } },
+                  dismissButton = { TextButton(onClick = { vm.dismissDeleteDialog() }) { Text("Cancel") } }
+              )
+          }
+          """)
+
+          write(base / "ui/screens/Common.kt", """
+          package com.notes.app.ui.screens
+
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.LazyRow
+          import androidx.compose.foundation.lazy.grid.GridCells
+          import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+          import androidx.compose.foundation.lazy.grid.items
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.dp
+          import com.notes.app.Note
+          import com.notes.app.NotesViewModel
+          import com.notes.app.ViewMode
+
+          @Composable
+          fun HeroDashboard(vm: NotesViewModel) {
+              ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(32.dp)) {
+                  Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                      Text("NotesMaster-inspired V3", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                      Text("Labels, search, themes, export/import, grid/list view, lock mode, and formatting helpers.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                          StatPill("Notes", vm.activeNotes.size.toString(), Modifier.weight(1f))
+                          StatPill("Labels", (vm.labels.size - 1).coerceAtLeast(0).toString(), Modifier.weight(1f))
+                          StatPill("Stars", vm.activeNotes.count { it.favorite }.toString(), Modifier.weight(1f))
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun StatPill(label: String, value: String, modifier: Modifier = Modifier) {
+              Surface(modifier = modifier, shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                  Column(modifier = Modifier.padding(14.dp)) {
+                      Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                      Text(label, style = MaterialTheme.typography.labelMedium)
+                  }
+              }
+          }
+
+          @Composable
+          fun LabelFilters(vm: NotesViewModel) {
+              LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  items(vm.labels) { label ->
+                      FilterChip(
+                          selected = vm.selectedLabel == label,
+                          onClick = { vm.selectLabel(label) },
+                          label = { Text(label) },
+                          leadingIcon = { if (vm.selectedLabel == label) Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                      )
+                  }
+              }
+          }
+
+          @Composable
+          fun NotesListContent(vm: NotesViewModel, list: List<Note>) {
+              if (list.isEmpty()) {
+                  EmptyState()
+                  return
+              }
+
+              if (vm.viewMode == ViewMode.GRID) {
+                  LazyVerticalGrid(
+                      columns = GridCells.Fixed(2),
+                      contentPadding = PaddingValues(bottom = 96.dp),
+                      verticalArrangement = Arrangement.spacedBy(12.dp),
+                      horizontalArrangement = Arrangement.spacedBy(12.dp)
+                  ) {
+                      items(list, key = { it.id }) { note ->
+                          NoteCard(vm, note)
+                      }
+                  }
+              } else {
+                  LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 96.dp)) {
+                      items(list, key = { it.id }) { note ->
+                          NoteCard(vm, note)
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun NoteCard(vm: NotesViewModel, note: Note) {
+              ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp), onClick = { vm.edit(note) }) {
+                  Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                          Column(modifier = Modifier.weight(1f)) {
+                              Row(verticalAlignment = Alignment.CenterVertically) {
+                                  if (note.pinned) Icon(Icons.Default.PushPin, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                  if (note.locked) Icon(Icons.Default.Lock, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
+                                  Spacer(Modifier.width(6.dp))
+                                  Text(note.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                              }
+                              Text(note.updatedAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                          }
+                          Surface(shape = RoundedCornerShape(50), color = Color(note.color).copy(alpha = 0.35f), modifier = Modifier.size(18.dp)) {}
+                      }
+
+                      Text(note.body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4, overflow = TextOverflow.Ellipsis)
+
+                      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                          AssistChip(onClick = {}, label = { Text(note.label) }, leadingIcon = { Icon(Icons.Default.Label, null, modifier = Modifier.size(16.dp)) })
+                          AssistChip(onClick = {}, label = { Text(note.tags) })
+                      }
+
+                      Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                          IconButton(onClick = { vm.togglePin(note) }) { Icon(Icons.Default.PushPin, "Pin") }
+                          IconButton(onClick = { vm.toggleFavorite(note) }) { Icon(if (note.favorite) Icons.Default.Star else Icons.Default.StarBorder, "Favorite") }
+                          IconButton(onClick = { vm.duplicate(note) }) { Icon(Icons.Default.ContentCopy, "Duplicate") }
+                          Spacer(Modifier.weight(1f))
+                          if (note.trashed || note.archived) {
+                              IconButton(onClick = { vm.restore(note) }) { Icon(Icons.Default.Restore, "Restore") }
+                          } else {
+                              IconButton(onClick = { vm.archive(note) }) { Icon(Icons.Default.Archive, "Archive") }
+                              IconButton(onClick = { vm.requestDelete(note) }) { Icon(Icons.Default.Delete, "Trash") }
+                          }
+                          if (note.trashed) IconButton(onClick = { vm.deleteForever(note) }) { Icon(Icons.Default.DeleteForever, "Delete forever") }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun EmptyState() {
+              Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                  Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(30.dp)) {
+                      Icon(Icons.Default.NoteAlt, null, modifier = Modifier.size(56.dp))
+                      Text("Nothing here yet", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                      Text("Create, restore, label, or search notes to see them here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+              }
+          }
+          """)
+
+          write(base / "ui/screens/HomeScreen.kt", """
+          package com.notes.app.ui.screens
+
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.Search
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import com.notes.app.NotesViewModel
+          import com.notes.app.SortMode
+
+          @Composable
+          fun HomeScreen(vm: NotesViewModel) {
+              Column(modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                  HeroDashboard(vm)
+
+                  OutlinedTextField(
+                      value = vm.query,
+                      onValueChange = vm::updateQuery,
+                      modifier = Modifier.fillMaxWidth(),
+                      leadingIcon = { Icon(Icons.Default.Search, null) },
+                      label = { Text("Search notes, labels, tags") },
+                      singleLine = true,
+                      shape = MaterialTheme.shapes.extraLarge
+                  )
+
+                  LabelFilters(vm)
+
+                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      FilterChip(selected = vm.sortMode == SortMode.UPDATED, onClick = { vm.setSort(SortMode.UPDATED) }, label = { Text("Updated") })
+                      FilterChip(selected = vm.sortMode == SortMode.TITLE, onClick = { vm.setSort(SortMode.TITLE) }, label = { Text("Title") })
+                      FilterChip(selected = vm.sortMode == SortMode.LABEL, onClick = { vm.setSort(SortMode.LABEL) }, label = { Text("Label") })
+                  }
+
+                  Text("Notes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                  NotesListContent(vm, vm.filteredNotes)
+              }
+          }
+
+          @Composable
+          fun NotesListScreen(vm: NotesViewModel, title: String) {
+              Column(modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                  Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                  LabelFilters(vm)
+                  NotesListContent(vm, vm.filteredNotes)
+              }
+          }
+
+          @Composable
+          fun LabelsScreen(vm: NotesViewModel) {
+              Column(modifier = Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                  Text("Labels", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                  LabelFilters(vm)
+                  vm.labels.filter { it != "All" }.forEach { label ->
+                      ElevatedCard(onClick = { vm.selectLabel(label); vm.navigate(com.notes.app.Screen.HOME) }) {
+                          Row(modifier = Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                              Text(label, fontWeight = FontWeight.Bold)
+                              Text("${vm.activeNotes.count { it.label == label }} notes")
+                          }
+                      }
+                  }
+              }
+          }
+          """)
+
+          write(base / "ui/screens/EditorScreen.kt", """
+          package com.notes.app.ui.screens
+
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyRow
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.Check
+          import androidx.compose.material.icons.filled.Close
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import com.notes.app.NotesViewModel
+
+          @Composable
+          fun EditorScreen(vm: NotesViewModel) {
+              val editing = vm.selectedNote
+
+              var title by remember(editing?.id) { mutableStateOf(editing?.title ?: "") }
+              var body by remember(editing?.id) { mutableStateOf(editing?.body ?: "") }
+              var label by remember(editing?.id) { mutableStateOf(editing?.label ?: "Personal") }
+              var tags by remember(editing?.id) { mutableStateOf(editing?.tags ?: "General") }
+              var color by remember(editing?.id) { mutableStateOf(editing?.color ?: 0xFF8EA7FF) }
+              var locked by remember(editing?.id) { mutableStateOf(editing?.locked ?: false) }
+
+              fun insert(token: String) {
+                  body = if (body.isBlank()) token else body + "\\n" + token
+              }
+
+              Column(modifier = Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                      Column {
+                          Text(if (editing == null) "New Note" else "Edit Note", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                          Text("Formatting helpers available", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      }
+
+                      Row {
+                          IconButton(onClick = { vm.cancelEdit() }) { Icon(Icons.Default.Close, "Cancel") }
+                          FilledIconButton(onClick = { vm.save(title, body, label, tags, color, locked) }) { Icon(Icons.Default.Check, "Save") }
+                      }
+                  }
+
+                  LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      items(listOf("Bold", "Italic", "Heading", "Quote", "Bullet", "Number", "Link", "Divider", "Highlight")) { item ->
+                          AssistChip(
+                              onClick = {
+                                  when (item) {
+                                      "Bold" -> insert("**bold text**")
+                                      "Italic" -> insert("_italic text_")
+                                      "Heading" -> insert("# Heading")
+                                      "Quote" -> insert("> Quote")
+                                      "Bullet" -> insert("- Bullet item")
+                                      "Number" -> insert("1. Numbered item")
+                                      "Link" -> insert("[title](https://example.com)")
+                                      "Divider" -> insert("---")
+                                      "Highlight" -> insert("==highlight==")
+                                  }
+                              },
+                              label = { Text(item) }
+                          )
+                      }
+                  }
+
+                  OutlinedTextField(value = title, onValueChange = { title = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Title") }, singleLine = true, shape = MaterialTheme.shapes.extraLarge)
+
+                  Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                      OutlinedTextField(value = label, onValueChange = { label = it }, modifier = Modifier.weight(1f), label = { Text("Label") }, singleLine = true, shape = MaterialTheme.shapes.extraLarge)
+                      OutlinedTextField(value = tags, onValueChange = { tags = it }, modifier = Modifier.weight(1f), label = { Text("Tags") }, singleLine = true, shape = MaterialTheme.shapes.extraLarge)
+                  }
+
+                  LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      items(listOf(0xFF8EA7FF, 0xFF7BE4B2, 0xFFFFB26B, 0xFFFF9BCB, 0xFFB69DFF)) { c ->
+                          FilterChip(
+                              selected = color == c,
+                              onClick = { color = c },
+                              label = { Text(" ") },
+                              leadingIcon = { Surface(color = Color(c), modifier = Modifier.size(16.dp), shape = MaterialTheme.shapes.small) {} }
+                          )
+                      }
+                  }
+
+                  Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                      Text("Lock this note")
+                      Switch(checked = locked, onCheckedChange = { locked = it })
+                  }
+
+                  OutlinedTextField(value = body, onValueChange = { body = it }, modifier = Modifier.fillMaxWidth().weight(1f), label = { Text("Write your note") }, shape = MaterialTheme.shapes.extraLarge, textStyle = MaterialTheme.typography.bodyLarge)
+
+                  Button(onClick = { vm.save(title, body, label, tags, color, locked) }, modifier = Modifier.fillMaxWidth().height(56.dp), shape = MaterialTheme.shapes.extraLarge) {
+                      Text("Save Note")
+                  }
+              }
+          }
+          """)
+
+          write(base / "ui/screens/SettingsScreen.kt", """
+          package com.notes.app.ui.screens
+
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.vector.ImageVector
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import com.notes.app.NotesViewModel
+          import com.notes.app.Screen
+
+          @Composable
+          fun SettingsScreen(vm: NotesViewModel) {
+              var pin by remember { mutableStateOf("1234") }
+
+              Column(modifier = Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                  Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+
+                  SettingsCard(Icons.Default.Style, "Appearance", "Theme: ${vm.themeName}") {
+                      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                          listOf("Indigo", "Emerald", "Sunset", "Rose").forEach { theme ->
+                              AssistChip(onClick = { vm.setTheme(theme) }, label = { Text(theme) })
+                          }
+                      }
+                  }
+
+                  SettingsCard(Icons.Default.DarkMode, "Dark Mode", "Switch light and dark mode.") {
+                      Switch(checked = vm.darkTheme, onCheckedChange = { vm.toggleTheme() })
+                  }
+
+                  SettingsCard(Icons.Default.GridView, "View Options", "Toggle between list and grid browsing.") {
+                      Button(onClick = { vm.toggleViewMode() }) { Text(vm.viewMode.name) }
+                  }
+
+                  SettingsCard(Icons.Default.Lock, "App Lock", "Enable PIN lock. Default PIN is 1234.") {
+                      OutlinedTextField(value = pin, onValueChange = { pin = it }, label = { Text("PIN") }, singleLine = true)
+                      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                          Button(onClick = { vm.setLock(true, pin) }) { Text("Enable") }
+                          OutlinedButton(onClick = { vm.setLock(false, pin) }) { Text("Disable") }
+                      }
+                  }
+
+                  SettingsCard(Icons.Default.ImportExport, "Export / Import", "Backup or restore from local app storage.") {
+                      Button(onClick = { vm.navigate(Screen.EXPORT_IMPORT) }) { Text("Open") }
+                  }
+
+                  SettingsCard(Icons.Default.Info, "About Notes V3", "Inspired by NotesMaster features, rebuilt natively in Compose.") {
+                      Button(onClick = { vm.navigate(Screen.ABOUT) }) { Text("About") }
+                  }
+
+                  Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                      Button(onClick = { vm.navigate(Screen.ARCHIVE) }, modifier = Modifier.weight(1f)) { Text("Archive") }
+                      Button(onClick = { vm.navigate(Screen.TRASH) }, modifier = Modifier.weight(1f)) { Text("Trash") }
+                  }
+
+                  Button(onClick = { vm.navigate(Screen.HOME) }, modifier = Modifier.fillMaxWidth()) {
+                      Text("Back Home")
+                  }
+              }
+          }
+
+          @Composable
+          fun SettingsCard(icon: ImageVector, title: String, body: String, content: @Composable ColumnScope.() -> Unit = {}) {
+              Card(shape = RoundedCornerShape(28.dp)) {
+                  Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                      Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                          Icon(icon, null)
+                          Column {
+                              Text(title, fontWeight = FontWeight.Bold)
+                              Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                          }
+                      }
+                      content()
+                  }
+              }
+          }
+
+          @Composable
+          fun ExportImportScreen(vm: NotesViewModel) {
+              Column(modifier = Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                  Text("Export / Import", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                  Text("This V3 build creates an export JSON inside private app storage and can import it back.")
+                  Button(onClick = { vm.exportNotes() }, modifier = Modifier.fillMaxWidth()) { Text("Export Notes") }
+                  Button(onClick = { vm.importLastExport() }, modifier = Modifier.fillMaxWidth()) { Text("Import Last Export") }
+                  if (vm.exportMessage.isNotBlank()) {
+                      Text(vm.exportMessage, color = MaterialTheme.colorScheme.primary)
+                  }
+                  Button(onClick = { vm.navigate(Screen.SETTINGS) }, modifier = Modifier.fillMaxWidth()) { Text("Back") }
+              }
+          }
+
+          @Composable
+          fun AboutScreen(vm: NotesViewModel) {
+              Column(modifier = Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                  Text("About Notes V3", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                  Text("Notes V3 combines your existing native Compose app with feature ideas from NotesMaster 3.0.4: labels, search, material themes, export/import, view modes, formatting helpers, lock mode, and refined settings.")
+                  Text("Package: com.notes.app")
+                  Button(onClick = { vm.navigate(Screen.SETTINGS) }, modifier = Modifier.fillMaxWidth()) { Text("Back") }
+              }
+          }
+          """)
+
+          write(base / "ui/screens/LockAndOnboarding.kt", """
+          package com.notes.app.ui.screens
+
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.Lock
+          import androidx.compose.material.icons.filled.NoteAlt
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import com.notes.app.NotesViewModel
+
+          @Composable
+          fun LockScreen(vm: NotesViewModel) {
+              var pin by remember { mutableStateOf("") }
+              var error by remember { mutableStateOf(false) }
+
+              Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                  ElevatedCard(shape = RoundedCornerShape(32.dp)) {
+                      Column(modifier = Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                          Icon(Icons.Default.Lock, null, modifier = Modifier.size(64.dp))
+                          Text("Notes Locked", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                          OutlinedTextField(value = pin, onValueChange = { pin = it; error = false }, label = { Text("PIN") }, isError = error, singleLine = true)
+                          Button(onClick = { error = !vm.unlock(pin) }, modifier = Modifier.fillMaxWidth()) { Text("Unlock") }
+                          if (error) Text("Wrong PIN", color = MaterialTheme.colorScheme.error)
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun OnboardingScreen(vm: NotesViewModel) {
+              Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                  ElevatedCard(shape = RoundedCornerShape(36.dp)) {
+                      Column(modifier = Modifier.padding(30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                          Icon(Icons.Default.NoteAlt, null, modifier = Modifier.size(72.dp))
+                          Text("Notes V3", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                          Text("Labels, search, themes, export/import, grid/list view, lock mode, formatting helpers, favorites, archive, trash, and persistent offline storage.")
+                          Button(onClick = { vm.finishOnboarding() }, modifier = Modifier.fillMaxWidth().height(56.dp), shape = MaterialTheme.shapes.extraLarge) {
+                              Text("Start Writing")
+                          }
+                      }
+                  }
+              }
+          }
+          """)
+          PY
+
+      - name: Verify release keystore exists
+        run: |
+          if [ ! -f app/signing/notes-release.jks ]; then
+            mkdir -p app/signing
+            keytool -genkeypair \
+              -v \
+              -keystore app/signing/notes-release.jks \
+              -storepass notespassword \
+              -alias noteskey \
+              -keypass notespassword \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Notes,O=Notes App,C=US"
+          fi
+
+      - name: Ensure Gradle wrapper
+        run: |
+          if [ ! -f ./gradlew ]; then
+            gradle wrapper --gradle-version 8.7
+          fi
+          chmod +x ./gradlew
+
+      - name: Build debug APK
+        run: |
+          set -o pipefail
+          ./gradlew clean assembleDebug --stacktrace --info 2>&1 | tee build-logs/v3-debug-build.log
+
+      - name: Build signed release APK
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease --stacktrace --info 2>&1 | tee build-logs/v3-release-apk-build.log
+
+      - name: Build signed release AAB
+        run: |
+          set -o pipefail
+          ./gradlew bundleRelease --stacktrace --info 2>&1 | tee build-logs/v3-release-aab-build.log
+
+      - name: Generate V3 build report
+        if: always()
+        run: |
+          cat > BUILD_REPORT.md <<EOF
+          # Notes V3 Build Report
+
+          Version Code: ${{ github.event.inputs.version_code }}
+          Version Name: ${{ github.event.inputs.version_name }}
+
+          ## V3 Features
+          - Labels
+          - Search
+          - Material theme presets
+          - Dark/light theme
+          - Export/import backup
+          - List/grid view
+          - Formatting helpers
+          - Lock screen
+          - Note color labels
+          - Pinned/favorite/archive/trash
+          - Settings/about pages
+          - Persistent offline JSON storage
+
+          ## Note
+          NotesMaster 3.0.4 is GPL-3.0 licensed. This V3 rebuild implements the same feature ideas natively instead of directly merging the original Java/WebView source.
+          EOF
+
+      - name: Upload debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notes-v3-debug-apk
+          path: |
+            **/build/outputs/apk/debug/*.apk
+
+      - name: Upload signed release APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notes-v3-signed-release-apk
+          path: |
+            **/build/outputs/apk/release/*.apk
+
+      - name: Upload signed release AAB
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notes-v3-signed-release-aab
+          path: |
+            **/build/outputs/bundle/release/*.aab
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notes-v3-build-logs
+          path: |
+            build-logs/
+            BUILD_REPORT.md
+            **/build/reports/
+            **/outputs/logs/
+
+      - name: Commit Notes V3 upgrade
+        if: always()
+        run: |
+          git config user.name "Notes V3 Feature Upgrade"
+          git config user.email "actions@github.com"
+
+          git add .
+          git commit -m "Upgrade Notes app to V3 feature set" || echo "No changes to commit"
+          git push || echo "Push skipped"
