@@ -502,4 +502,183 @@ jobs:
                               Icon(
                                   if (note.favorite) Icons.Default.Star else Icons.Default.StarBorder,
                                   contentDescription = "Favorite"
-                             
+                              )
+                          }
+
+                          IconButton(onClick = { vm.duplicate(note) }) {
+                              Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate")
+                          }
+
+                          if (note.trashed || note.archived) {
+                              IconButton(onClick = { vm.restore(note) }) {
+                                  Icon(Icons.Default.Restore, contentDescription = "Restore")
+                              }
+                          } else {
+                              IconButton(onClick = { vm.archive(note) }) {
+                                  Icon(Icons.Default.Archive, contentDescription = "Archive")
+                              }
+                              IconButton(onClick = { vm.moveToTrash(note) }) {
+                                  Icon(Icons.Default.Delete, contentDescription = "Trash")
+                              }
+                          }
+
+                          if (note.trashed) {
+                              IconButton(onClick = { vm.deleteForever(note) }) {
+                                  Icon(Icons.Default.DeleteForever, contentDescription = "Delete forever")
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun EditorScreen(vm: NotesViewModel) {
+              val editing = vm.selectedNote
+
+              var title by remember(editing?.id) { mutableStateOf(editing?.title ?: "") }
+              var body by remember(editing?.id) { mutableStateOf(editing?.body ?: "") }
+              var folder by remember(editing?.id) { mutableStateOf(editing?.folder ?: "Personal") }
+              var tag by remember(editing?.id) { mutableStateOf(editing?.tag ?: "General") }
+
+              Column(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .padding(16.dp),
+                  verticalArrangement = Arrangement.spacedBy(14.dp)
+              ) {
+                  Text(
+                      if (editing == null) "New Note" else "Edit Note",
+                      style = MaterialTheme.typography.headlineMedium,
+                      fontWeight = FontWeight.Bold
+                  )
+
+                  OutlinedTextField(
+                      value = title,
+                      onValueChange = { title = it },
+                      modifier = Modifier.fillMaxWidth(),
+                      label = { Text("Title") },
+                      singleLine = true
+                  )
+
+                  OutlinedTextField(
+                      value = folder,
+                      onValueChange = { folder = it },
+                      modifier = Modifier.fillMaxWidth(),
+                      label = { Text("Folder") },
+                      singleLine = true
+                  )
+
+                  OutlinedTextField(
+                      value = tag,
+                      onValueChange = { tag = it },
+                      modifier = Modifier.fillMaxWidth(),
+                      label = { Text("Tag") },
+                      singleLine = true
+                  )
+
+                  OutlinedTextField(
+                      value = body,
+                      onValueChange = { body = it },
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .weight(1f),
+                      label = { Text("Body") }
+                  )
+
+                  Button(
+                      onClick = { vm.save(title, body, folder, tag) },
+                      modifier = Modifier.fillMaxWidth()
+                  ) {
+                      Text("Save Note")
+                  }
+              }
+          }
+
+          @Composable
+          fun SettingsScreen(vm: NotesViewModel) {
+              Column(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .padding(20.dp),
+                  verticalArrangement = Arrangement.spacedBy(16.dp)
+              ) {
+                  Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+
+                  Card(shape = RoundedCornerShape(24.dp)) {
+                      Column(
+                          modifier = Modifier.padding(18.dp),
+                          verticalArrangement = Arrangement.spacedBy(10.dp)
+                      ) {
+                          Text("Offline-first", fontWeight = FontWeight.Bold)
+                          Text("Notes are now saved permanently on this device using local JSON storage.")
+                      }
+                  }
+
+                  Card(shape = RoundedCornerShape(24.dp)) {
+                      Column(
+                          modifier = Modifier.padding(18.dp),
+                          verticalArrangement = Arrangement.spacedBy(10.dp)
+                      ) {
+                          Text("Storage", fontWeight = FontWeight.Bold)
+                          Text("Data file: notes.json inside private app storage.")
+                      }
+                  }
+
+                  Button(onClick = { vm.navigate(Screen.HOME) }, modifier = Modifier.fillMaxWidth()) {
+                      Text("Back Home")
+                  }
+              }
+          }
+
+          @Composable
+          fun EmptyState() {
+              Box(
+                  modifier = Modifier.fillMaxSize(),
+                  contentAlignment = Alignment.Center
+              ) {
+                  Column(
+                      horizontalAlignment = Alignment.CenterHorizontally,
+                      verticalArrangement = Arrangement.spacedBy(12.dp)
+                  ) {
+                      Icon(Icons.Default.NoteAlt, contentDescription = null, modifier = Modifier.size(56.dp))
+                      Text("No notes here", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                      Text("Create, restore, or search notes to see them here.")
+                  }
+              }
+          }
+          EOF
+
+          if [ "$OLD_FILE" != "app/src/main/java/$PACKAGE_PATH/MainActivity.kt" ]; then
+            rm -f "$OLD_FILE"
+          fi
+
+      - name: Update Gradle package identity only
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          gradle = Path("app/build.gradle.kts")
+          if gradle.exists():
+              text = gradle.read_text()
+              import re
+              text = re.sub(r'namespace\s*=\s*"[^"]+"', 'namespace = "com.notes.app"', text)
+              text = re.sub(r'applicationId\s*=\s*"[^"]+"', 'applicationId = "com.notes.app"', text)
+              gradle.write_text(text)
+
+          manifest = Path("app/src/main/AndroidManifest.xml")
+          if manifest.exists():
+              text = manifest.read_text()
+              import re
+              text = re.sub(r'android:label="[^"]*"', 'android:label="Notes"', text)
+              manifest.write_text(text)
+          PY
+
+      - name: Commit update only
+        run: |
+          git config user.name "Notes App Update Bot"
+          git config user.email "actions@github.com"
+
+          git add .
+          git commit -m "Update Notes app persistent storage" || echo "No changes to commit"
+          git push || echo "Push skipped"
