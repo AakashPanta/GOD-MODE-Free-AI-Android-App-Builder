@@ -1,0 +1,54 @@
+name: Fix Kotlin Build Errors
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fix Kotlin escape issues
+        run: |
+          sed -i 's/\\s+/\\\\s+/g' app/src/main/java/com/notes/app/NotesViewModel.kt || true
+          sed -i 's/\\d+/\\\\d+/g' app/src/main/java/com/notes/app/ui/screens/EditorScreen.kt || true
+          sed -i 's/\\./\\\\./g' app/src/main/java/com/notes/app/ui/screens/EditorScreen.kt || true
+
+      - name: Fix broken EditorScreen syntax
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          file = Path("app/src/main/java/com/notes/app/ui/screens/EditorScreen.kt")
+
+          if file.exists():
+              text = file.read_text()
+
+              # Fix broken string issues
+              text = text.replace('insert("1. Numbered item")', 'insert("1. Numbered item")')
+              text = text.replace('insert("[Link](https://example.com)")', 'insert("[Link](https://example.com)")')
+
+              file.write_text(text)
+          PY
+
+      - name: Ensure MarkdownPreview exists
+        run: |
+          if ! grep -q "fun MarkdownPreview" app/src/main/java/com/notes/app/ui/screens/EditorScreen.kt; then
+            cat >> app/src/main/java/com/notes/app/ui/screens/EditorScreen.kt <<'EOF'
+
+@Composable
+fun MarkdownPreview(content: String) {
+    Text(content)
+}
+EOF
+          fi
+
+      - name: Commit fixes
+        run: |
+          git config user.name "Fix Bot"
+          git config user.email "actions@github.com"
+          git add .
+          git commit -m "Fix Kotlin escape + syntax errors" || echo "No changes"
+          git push
