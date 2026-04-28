@@ -1,0 +1,126 @@
+name: Fix Build Configuration (FINAL)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-config:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # =========================
+      # FIX build.gradle.kts
+      # =========================
+      - name: Fix app Gradle config
+        run: |
+          cat > app/build.gradle.kts <<'EOF'
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "com.notes.app"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.notes.app"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        compose = true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.14"
+    }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.activity:activity-compose:1.9.0")
+
+    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+
+    debugImplementation("androidx.compose.ui:ui-tooling")
+}
+EOF
+
+      # =========================
+      # FIX ROOT build.gradle.kts
+      # =========================
+      - name: Fix project Gradle
+        run: |
+          cat > build.gradle.kts <<'EOF'
+plugins {
+    id("com.android.application") version "8.2.2" apply false
+    id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+}
+EOF
+
+      # =========================
+      # FIX gradle.properties
+      # =========================
+      - name: Fix gradle.properties
+        run: |
+          cat > gradle.properties <<'EOF'
+org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+android.enableJetifier=true
+kotlin.code.style=official
+EOF
+
+      # =========================
+      # ENSURE WRAPPER
+      # =========================
+      - name: Ensure Gradle wrapper
+        run: |
+          if [ ! -f ./gradlew ]; then
+            gradle wrapper --gradle-version 8.7
+          fi
+          chmod +x ./gradlew
+
+      # =========================
+      # TEST BUILD
+      # =========================
+      - name: Build Debug APK
+        run: |
+          ./gradlew clean assembleDebug --stacktrace
+
+      # =========================
+      # COMMIT FIX
+      # =========================
+      - name: Commit fix
+        run: |
+          git config user.name "Build Fix Bot"
+          git config user.email "actions@github.com"
+          git add .
+          git commit -m "Fix Kotlin + Compose compatibility (FINAL)" || echo "No changes"
+          git push
