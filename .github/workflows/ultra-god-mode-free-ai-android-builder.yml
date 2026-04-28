@@ -1,4 +1,4 @@
-name: ULTRA GOD MODE Free AI Android Builder
+name: ULTRA GOD MODE v2 Free AI Android Builder
 
 on:
   workflow_dispatch:
@@ -53,7 +53,7 @@ permissions:
   contents: write
 
 jobs:
-  ultra-god-mode:
+  ultra-god-mode-v2:
     name: Build Android App With Free Local AI
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -87,6 +87,7 @@ jobs:
 
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
           unzip -q cmdline-tools.zip
+          sudo rm -rf "$ANDROID_HOME/cmdline-tools/latest"
           sudo mv cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
 
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
@@ -113,7 +114,126 @@ jobs:
         run: |
           ollama pull "${{ github.event.inputs.ai_model }}"
 
-      - name: Create ULTRA GOD MODE engine
+      - name: Create stable Android base
+        run: |
+          PACKAGE_NAME="${{ github.event.inputs.package_name }}"
+          APP_NAME="${{ github.event.inputs.app_name }}"
+          PACKAGE_PATH="$(echo "$PACKAGE_NAME" | tr '.' '/')"
+
+          mkdir -p app/src/main/java/$PACKAGE_PATH
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/values-night
+
+          cat > settings.gradle.kts <<EOF
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "$APP_NAME"
+          include(":app")
+          EOF
+
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF
+
+          cat > app/build.gradle.kts <<EOF
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "$PACKAGE_NAME"
+              compileSdk = 36
+
+              defaultConfig {
+                  applicationId = "$PACKAGE_NAME"
+                  minSdk = 26
+                  targetSdk = 36
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              buildFeatures {
+                  compose = true
+              }
+
+              composeOptions {
+                  kotlinCompilerExtensionVersion = "1.5.14"
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
+              implementation("androidx.activity:activity-compose:1.9.2")
+              implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-tooling-preview")
+              implementation("androidx.compose.foundation:foundation")
+              implementation("androidx.compose.material3:material3")
+              debugImplementation("androidx.compose.ui:ui-tooling")
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<EOF
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:allowBackup="true"
+                  android:label="$APP_NAME"
+                  android:supportsRtl="true"
+                  android:theme="@style/AppTheme">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar" />
+          </resources>
+          EOF
+
+          cat > app/src/main/res/values-night/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar" />
+          </resources>
+          EOF
+
+      - name: Create ULTRA GOD MODE v2 engine
         run: |
           mkdir -p .ultra
 
@@ -133,9 +253,15 @@ jobs:
           ULTRA = Path(".ultra")
           ULTRA.mkdir(exist_ok=True)
 
+          CORE_LOCKED_FILES = {
+              "settings.gradle.kts",
+              "build.gradle.kts",
+              "app/build.gradle.kts",
+              "app/src/main/AndroidManifest.xml",
+          }
+
           def run_ollama(prompt: str, out_file: str) -> str:
-              path = ULTRA / out_file
-              print(f"Running model -> {out_file}")
+              output_path = ULTRA / out_file
               result = subprocess.run(
                   ["ollama", "run", MODEL],
                   input=prompt,
@@ -144,123 +270,37 @@ jobs:
                   timeout=900
               )
               output = (result.stdout or "") + "\n" + (result.stderr or "")
-              path.write_text(output, errors="ignore")
+              output_path.write_text(output, errors="ignore")
               return output
 
           def extract_code(text: str) -> str:
-              fence = re.search(r"```(?:kotlin|kt|xml|gradle|properties|toml|txt|text)?\n(.*?)```", text, re.DOTALL)
-              if fence:
-                  return fence.group(1).strip() + "\n"
+              match = re.search(
+                  r"```(?:kotlin|kt|xml|gradle|properties|toml|txt|text)?\n(.*?)```",
+                  text,
+                  re.DOTALL
+              )
+              if match:
+                  return match.group(1).strip() + "\n"
               return text.strip() + "\n"
 
           def safe_write(path: str, content: str):
               path = path.strip().replace("\\", "/")
+
+              if path in CORE_LOCKED_FILES:
+                  print(f"Skipping locked core file: {path}")
+                  return
+
               if path.startswith("/") or ".." in Path(path).parts:
                   print(f"Unsafe path skipped: {path}")
                   return
-              p = ROOT / path
-              p.parent.mkdir(parents=True, exist_ok=True)
-              p.write_text(content, errors="ignore")
+
+              file_path = ROOT / path
+              file_path.parent.mkdir(parents=True, exist_ok=True)
+              file_path.write_text(content, errors="ignore")
               print(f"Wrote {path}")
 
-          def fallback_project():
-              print("Creating fallback production Android project...")
-              safe_write("settings.gradle.kts", f'''
-          pluginManagement {{
-              repositories {{
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }}
-          }}
-
-          dependencyResolutionManagement {{
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {{
-                  google()
-                  mavenCentral()
-              }}
-          }}
-
-          rootProject.name = "{APP_NAME.replace('"', '')}"
-          include(":app")
-          ''')
-
-              safe_write("build.gradle.kts", '''
-          plugins {
-              id("com.android.application") version "8.5.2" apply false
-              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
-          }
-          ''')
-
-              safe_write("app/build.gradle.kts", f'''
-          plugins {{
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
-          }}
-
-          android {{
-              namespace = "{PACKAGE_NAME}"
-              compileSdk = 36
-
-              defaultConfig {{
-                  applicationId = "{PACKAGE_NAME}"
-                  minSdk = 26
-                  targetSdk = 36
-                  versionCode = 1
-                  versionName = "1.0"
-              }}
-
-              buildFeatures {{
-                  compose = true
-              }}
-
-              composeOptions {{
-                  kotlinCompilerExtensionVersion = "1.5.14"
-              }}
-
-              kotlinOptions {{
-                  jvmTarget = "17"
-              }}
-          }}
-
-          dependencies {{
-              implementation("androidx.core:core-ktx:1.13.1")
-              implementation("androidx.activity:activity-compose:1.9.2")
-              implementation(platform("androidx.compose:compose-bom:2024.06.00"))
-              implementation("androidx.compose.ui:ui")
-              implementation("androidx.compose.ui:ui-tooling-preview")
-              implementation("androidx.compose.material3:material3")
-              debugImplementation("androidx.compose.ui:ui-tooling")
-          }}
-          ''')
-
-              safe_write("app/src/main/AndroidManifest.xml", f'''
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <application
-                  android:theme="@style/AppTheme"
-                  android:label="{APP_NAME}"
-                  android:allowBackup="true"
-                  android:supportsRtl="true">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          ''')
-
-              safe_write("app/src/main/res/values/styles.xml", '''
-          <resources>
-              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar" />
-          </resources>
-          ''')
-
-              safe_write(f"app/src/main/java/{PACKAGE_PATH}/MainActivity.kt", f'''
+          def create_fallback_app_code():
+              main = f"""
           package {PACKAGE_NAME}
 
           import android.os.Bundle
@@ -272,7 +312,6 @@ jobs:
           import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
-          import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.unit.dp
@@ -283,7 +322,7 @@ jobs:
                   setContent {{
                       MaterialTheme {{
                           Surface(modifier = Modifier.fillMaxSize()) {{
-                              UltraApp()
+                              UltraFallbackApp()
                           }}
                       }}
                   }}
@@ -291,14 +330,14 @@ jobs:
           }}
 
           @Composable
-          fun UltraApp() {{
-              var text by remember {{ mutableStateOf("") }}
-              var items by remember {{
+          fun UltraFallbackApp() {{
+              var note by remember {{ mutableStateOf("") }}
+              var notes by remember {{
                   mutableStateOf(
                       listOf(
-                          "Production-ready Compose shell",
-                          "Material 3 interface",
-                          "Generated by ULTRA GOD MODE",
+                          "Production Android foundation ready",
+                          "Material 3 Compose UI",
+                          "Free AI generated project shell",
                           "Prompt: {APP_PROMPT[:90].replace('"', "'")}"
                       )
                   )
@@ -317,22 +356,22 @@ jobs:
                   )
 
                   Text(
-                      text = "AI-generated Android foundation with a polished Compose UI.",
+                      text = "A stable buildable Android app generated by ULTRA GOD MODE v2.",
                       style = MaterialTheme.typography.bodyLarge
                   )
 
                   OutlinedTextField(
-                      value = text,
-                      onValueChange = {{ text = it }},
+                      value = note,
+                      onValueChange = {{ note = it }},
                       modifier = Modifier.fillMaxWidth(),
-                      label = {{ Text("Add item") }}
+                      label = {{ Text("Write something") }}
                   )
 
                   Button(
                       onClick = {{
-                          if (text.isNotBlank()) {{
-                              items = listOf(text.trim()) + items
-                              text = ""
+                          if (note.isNotBlank()) {{
+                              notes = listOf(note.trim()) + notes
+                              note = ""
                           }}
                       }},
                       modifier = Modifier.fillMaxWidth()
@@ -341,40 +380,38 @@ jobs:
                   }}
 
                   LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {{
-                      items(items) {{ item ->
+                      items(notes) {{ item ->
                           Card(
-                              shape = RoundedCornerShape(20.dp),
-                              modifier = Modifier.fillMaxWidth()
+                              modifier = Modifier.fillMaxWidth(),
+                              shape = RoundedCornerShape(20.dp)
                           ) {{
-                              Row(
+                              Text(
+                                  text = item,
                                   modifier = Modifier.padding(18.dp),
-                                  verticalAlignment = Alignment.CenterVertically
-                              ) {{
-                                  Text(item, style = MaterialTheme.typography.bodyLarge)
-                              }}
+                                  style = MaterialTheme.typography.bodyLarge
+                              )
                           }}
                       }}
                   }}
               }}
           }}
-          ''')
+          """
+              safe_write(f"app/src/main/java/{PACKAGE_PATH}/MainActivity.kt", main.strip() + "\n")
 
           def create_manifest_list():
               required = [
-                  "settings.gradle.kts",
-                  "build.gradle.kts",
-                  "app/build.gradle.kts",
-                  "app/src/main/AndroidManifest.xml",
                   f"app/src/main/java/{PACKAGE_PATH}/MainActivity.kt",
                   f"app/src/main/java/{PACKAGE_PATH}/ui/theme/Theme.kt",
                   f"app/src/main/java/{PACKAGE_PATH}/ui/home/HomeScreen.kt",
                   f"app/src/main/java/{PACKAGE_PATH}/ui/home/HomeViewModel.kt",
+                  f"app/src/main/java/{PACKAGE_PATH}/data/AppRepository.kt",
+                  f"app/src/main/java/{PACKAGE_PATH}/model/AppModels.kt",
               ]
 
               prompt = f"""
-          You are an Android project architect.
+          You are a senior Android architect.
 
-          Create a JSON array of file paths needed for a complete Kotlin Jetpack Compose Android app.
+          Create a JSON array of Kotlin file paths only.
 
           App name: {APP_NAME}
           Package name: {PACKAGE_NAME}
@@ -385,114 +422,119 @@ jobs:
 
           Rules:
           - Return ONLY JSON array.
-          - Include Gradle files.
-          - Include Manifest.
+          - Do NOT include Gradle files.
+          - Do NOT include AndroidManifest.xml.
+          - Do NOT include XML files.
+          - Kotlin files only.
+          - Keep file count between 5 and 14.
           - Include MainActivity.
-          - Include theme files.
-          - Include screens, ViewModels, models, repositories if useful.
-          - Keep total file count between 8 and 18.
-          - Use only Kotlin, XML, Gradle Kotlin DSL.
+          - Include screens, ViewModels, models, repositories where useful.
 
-          Mandatory starting files:
+          Mandatory files:
           {json.dumps(required, indent=2)}
           """
-              out = run_ollama(prompt, "01_manifest_raw.txt")
+
+              output = run_ollama(prompt, "01_manifest_raw.txt")
+
               try:
-                  arr_match = re.search(r"\[.*\]", out, re.DOTALL)
-                  files = json.loads(arr_match.group(0)) if arr_match else required
+                  match = re.search(r"\[.*\]", output, re.DOTALL)
+                  files = json.loads(match.group(0)) if match else required
               except Exception:
                   files = required
 
               cleaned = []
+
               for f in files:
-                  if isinstance(f, str):
-                      f = f.strip().replace("\\", "/")
-                      if f and not f.startswith("/") and ".." not in Path(f).parts:
-                          cleaned.append(f)
+                  if not isinstance(f, str):
+                      continue
+
+                  f = f.strip().replace("\\", "/")
+
+                  if not f.endswith(".kt"):
+                      continue
+
+                  if not f.startswith(f"app/src/main/java/{PACKAGE_PATH}/"):
+                      continue
+
+                  if f.startswith("/") or ".." in Path(f).parts:
+                      continue
+
+                  if f not in cleaned:
+                      cleaned.append(f)
 
               for f in required:
                   if f not in cleaned:
                       cleaned.append(f)
 
-              cleaned = cleaned[:22]
+              cleaned = cleaned[:18]
               (ULTRA / "manifest.json").write_text(json.dumps(cleaned, indent=2))
-              print("Manifest files:")
-              print(json.dumps(cleaned, indent=2))
               return cleaned
 
           def generate_file(file_path: str, all_files: list[str]):
-              ext = Path(file_path).suffix.lower()
-              lang = "kotlin"
-              if ext == ".xml":
-                  lang = "xml"
-              elif ext == ".properties":
-                  lang = "properties"
-              elif ext == ".toml":
-                  lang = "toml"
-
               prompt = f"""
-          You are a senior Android engineer.
+          You are a senior Android Kotlin engineer.
 
-          Generate ONE complete file for a production Android app.
+          Generate ONE complete Kotlin file.
 
           App name: {APP_NAME}
           Package name: {PACKAGE_NAME}
           User request: {APP_PROMPT}
 
-          Full project file list:
+          Full Kotlin file list:
           {json.dumps(all_files, indent=2)}
 
-          Current file to generate:
+          Current file:
           {file_path}
 
-          Requirements:
-          - Output ONLY this file's code.
-          - No markdown explanation outside code.
-          - Kotlin + Jetpack Compose + Material 3.
-          - MVVM where applicable.
-          - Compile SDK 36.
-          - Min SDK 26.
-          - Java 17.
-          - Gradle Kotlin DSL.
-          - Use package {PACKAGE_NAME} for Kotlin files.
-          - No fake dependencies.
-          - No TODO placeholders.
-          - Keep implementation realistic and buildable.
+          Hard rules:
+          - Output ONLY Kotlin code.
+          - No markdown explanation.
+          - Package must be: {PACKAGE_NAME}
+          - Use Jetpack Compose and Material 3.
+          - Use MVVM where applicable.
+          - Do not use Navigation dependency.
+          - Do not use Room.
+          - Do not use Hilt.
+          - Do not use fake libraries.
+          - Do not reference missing resources.
+          - Do not use experimental APIs unless opted in.
+          - Keep code buildable with existing dependencies.
+          - MainActivity must call setContent and show the app UI.
           """
-              out_name = "file_" + re.sub(r"[^a-zA-Z0-9]+", "_", file_path) + ".txt"
-              out = run_ollama(prompt, out_name)
-              content = extract_code(out)
 
-              if file_path.endswith(".kt") and f"package {PACKAGE_NAME}" not in content:
-                  if "app/src/main/java/" in file_path:
-                      content = f"package {PACKAGE_NAME}\n\n" + re.sub(r"^\s*package\s+[\w.]+\s*", "", content)
+              output_name = "file_" + re.sub(r"[^a-zA-Z0-9]+", "_", file_path) + ".txt"
+              output = run_ollama(prompt, output_name)
+              content = extract_code(output)
+
+              content = re.sub(r"^\s*package\s+[\w.]+\s*", "", content)
+              content = f"package {PACKAGE_NAME}\n\n{content.strip()}\n"
 
               safe_write(file_path, content)
 
-          def validate_minimum():
-              required = [
-                  "settings.gradle.kts",
-                  "build.gradle.kts",
-                  "app/build.gradle.kts",
-                  "app/src/main/AndroidManifest.xml",
-                  f"app/src/main/java/{PACKAGE_PATH}/MainActivity.kt",
-              ]
-              missing = [f for f in required if not Path(f).exists()]
-              return missing
+          def validate_or_fallback():
+              main_file = Path(f"app/src/main/java/{PACKAGE_PATH}/MainActivity.kt")
 
-          def generate_project():
+              if not main_file.exists():
+                  print("MainActivity missing. Creating fallback.")
+                  create_fallback_app_code()
+                  return
+
+              content = main_file.read_text(errors="ignore")
+
+              if "class MainActivity" not in content or "setContent" not in content:
+                  print("MainActivity invalid. Creating fallback.")
+                  create_fallback_app_code()
+
+          def main():
               files = create_manifest_list()
-              for f in files:
-                  generate_file(f, files)
 
-              missing = validate_minimum()
-              if missing:
-                  print("Missing critical files. Activating fallback.")
-                  print(missing)
-                  fallback_project()
+              for file_path in files:
+                  generate_file(file_path, files)
+
+              validate_or_fallback()
 
           if __name__ == "__main__":
-              generate_project()
+              main()
           PY
 
           cat > .ultra/fix.py <<'PY'
@@ -503,7 +545,13 @@ jobs:
 
           MODEL = os.environ["AI_MODEL"]
           PACKAGE_NAME = os.environ["PACKAGE_NAME"]
-          APP_NAME = os.environ["APP_NAME"]
+
+          CORE_LOCKED_FILES = {
+              "settings.gradle.kts",
+              "build.gradle.kts",
+              "app/build.gradle.kts",
+              "app/src/main/AndroidManifest.xml",
+          }
 
           def run_ollama(prompt: str) -> str:
               result = subprocess.run(
@@ -522,52 +570,67 @@ jobs:
               )
               matches = pattern.findall(text)
               count = 0
+
               for raw_path, content in matches:
                   path = raw_path.strip().replace("\\", "/")
+
+                  if path in CORE_LOCKED_FILES:
+                      print(f"Skipping locked core file: {path}")
+                      continue
+
                   if path.startswith("/") or ".." in Path(path).parts:
                       continue
+
+                  if not path.endswith(".kt"):
+                      continue
+
+                  content = re.sub(r"^\s*package\s+[\w.]+\s*", "", content.strip())
+                  content = f"package {PACKAGE_NAME}\n\n{content}\n"
+
                   p = Path(path)
                   p.parent.mkdir(parents=True, exist_ok=True)
-                  p.write_text(content.strip() + "\n", errors="ignore")
+                  p.write_text(content, errors="ignore")
                   print(f"Fixed {path}")
                   count += 1
+
               return count
 
           files = []
-          for p in Path(".").rglob("*"):
+
+          for p in Path(".").rglob("*.kt"):
               s = str(p)
-              if p.is_file() and ".git" not in s and ".gradle" not in s and "/build/" not in s and ".ultra" not in s:
+              if ".git" not in s and ".gradle" not in s and "/build/" not in s and ".ultra" not in s:
                   files.append(s)
 
           build_log = ""
+
           for name in [".ultra/build.log", ".ultra/build_error.log"]:
               if Path(name).exists():
                   build_log += Path(name).read_text(errors="ignore") + "\n"
 
           prompt = f"""
-          You are ULTRA GOD MODE Android build fixer.
+          You are an Android Kotlin build fixer.
 
-          The Android project failed to build.
+          The project failed to build.
 
-          App name: {APP_NAME}
-          Package name: {PACKAGE_NAME}
+          Return ONLY changed Kotlin files using this exact format:
 
-          Return ONLY changed files using:
-
-          FILE: path/to/file
+          FILE: app/src/main/java/path/File.kt
           ```kotlin
-          full corrected file content
+          full corrected Kotlin file content
           ```
 
           Rules:
-          - Full files only.
-          - No explanations.
-          - Fix Gradle/Kotlin/Compose/Manifest/import/version errors.
-          - Keep project buildable with ./gradlew assembleDebug.
-          - Do not invent unavailable dependencies.
-          - Prefer simple stable Compose code.
+          - Kotlin files only.
+          - Do not output Gradle files.
+          - Do not output AndroidManifest.
+          - Do not use unavailable dependencies.
+          - Do not use Navigation, Room, Hilt, Retrofit, Coil, or DataStore.
+          - Use only Compose, Material3, lifecycle ViewModel, Kotlin standard library.
+          - Package must be {PACKAGE_NAME}.
+          - Fix imports, unresolved references, syntax errors, and Compose issues.
 
-          Existing file tree:
+          Kotlin files:
           {chr(10).join(files)}
 
           Build error:
@@ -576,14 +639,14 @@ jobs:
 
           output = run_ollama(prompt)
           Path(".ultra/fix_output.txt").write_text(output, errors="ignore")
+
           count = write_files_from_blocks(output)
 
           if count == 0:
-              print("No valid fix blocks returned.")
               raise SystemExit(1)
           PY
 
-      - name: Generate project file-by-file
+      - name: Generate app code file-by-file
         env:
           AI_MODEL: ${{ github.event.inputs.ai_model }}
           APP_PROMPT: ${{ github.event.inputs.app_prompt }}
@@ -592,7 +655,7 @@ jobs:
         run: |
           python3 .ultra/engine.py
 
-      - name: Create Gradle wrapper
+      - name: Ensure Gradle wrapper
         run: |
           if [ ! -f ./gradlew ]; then
             gradle wrapper --gradle-version 8.10.2 || true
@@ -638,7 +701,7 @@ jobs:
               exit 0
             fi
 
-            echo "Build failed. Fixing with AI..."
+            echo "Build failed. Asking AI to fix Kotlin app files..."
             tail -200 .ultra/build_error.log || true
 
             python3 .ultra/fix.py || true
@@ -647,11 +710,11 @@ jobs:
           echo "Build failed after all attempts."
           exit 1
 
-      - name: Create report
+      - name: Create build report
         if: always()
         run: |
           cat > BUILD_REPORT.md <<EOF
-          # ULTRA GOD MODE Android Build Report
+          # ULTRA GOD MODE v2 Android Build Report
 
           ## App Name
           ${{ github.event.inputs.app_name }}
@@ -668,16 +731,16 @@ jobs:
           ## Date
           $(date)
 
-          ## Artifacts
-          - APK artifact: ultra-god-mode-android-apk
-          - Logs artifact: ultra-god-mode-logs
+          ## Notes
+          Core Android/Gradle files were locked for build stability.
+          AI generated only Kotlin app-layer files.
           EOF
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ultra-god-mode-android-apk
+          name: ultra-god-mode-v2-android-apk
           path: |
             **/build/outputs/apk/debug/*.apk
 
@@ -685,7 +748,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ultra-god-mode-logs
+          name: ultra-god-mode-v2-logs
           path: |
             .ultra/
             BUILD_REPORT.md
@@ -694,9 +757,9 @@ jobs:
       - name: Commit generated project
         if: always()
         run: |
-          git config user.name "ULTRA GOD MODE Android Builder"
+          git config user.name "ULTRA GOD MODE v2 Android Builder"
           git config user.email "actions@github.com"
 
           git add .
-          git commit -m "Generate Android app with ULTRA GOD MODE" || echo "No changes to commit"
+          git commit -m "Generate Android app with ULTRA GOD MODE v2" || echo "No changes to commit"
           git push || echo "Push skipped or failed"
