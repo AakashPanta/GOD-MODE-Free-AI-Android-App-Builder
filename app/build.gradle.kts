@@ -4,13 +4,17 @@ plugins {
 }
 
 android {
-    signingConfigs {
-        create("release") {
-            storeFile = file("signing/notes-release.jks") ?: "signing/notes-release.jks")
-            storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: "notespassword"
-            keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "noteskey"
-            keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: "notespassword"
-        }
+
+signingConfigs {
+    create("release") {
+        storeFile = file("signing/notes-release.jks")
+        storePassword = "notespassword"
+        keyAlias = "noteskey"
+        keyPassword = "notespassword"
+    }
+}
+
+    
     }
 
     namespace = "com.notes.app"
@@ -39,6 +43,7 @@ android {
 
     buildTypes {
         release {
+                signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             isShrinkResources = false
             signingConfig = signingConfigs.getByName("release")
