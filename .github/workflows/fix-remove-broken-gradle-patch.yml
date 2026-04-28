@@ -1,0 +1,97 @@
+name: Fix Remove Broken Gradle Patch
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Remove Gradle patch step and fix signing permanently
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          workflow_path = Path(".github/workflows/notes-production-pipeline.yml")
+
+          if not workflow_path.exists():
+              raise SystemExit("Production pipeline not found")
+
+          text = workflow_path.read_text()
+
+          # 🔴 REMOVE ENTIRE PATCH STEP (this is the root problem)
+          text = re.sub(
+              r'- name: Patch Gradle for production signing and versioning[\s\S]*?PY',
+              '',
+              text
+          )
+
+          # 🔴 FIX KEYSTORE PATH
+          text = text.replace(
+              'KEYSTORE_PATH="signing/notes-release.jks"',
+              'KEYSTORE_PATH="app/signing/notes-release.jks"\n          mkdir -p app/signing'
+          )
+
+          text = text.replace(
+              "SIGNING_KEYSTORE_PATH: signing/notes-release.jks",
+              "SIGNING_KEYSTORE_PATH: app/signing/notes-release.jks"
+          )
+
+          # Cleanup duplicates if any
+          text = text.replace("app/app/signing/notes-release.jks", "app/signing/notes-release.jks")
+
+          workflow_path.write_text(text)
+
+          # 🔴 FORCE CLEAN SIGNING CONFIG IN GRADLE
+          gradle = Path("app/build.gradle.kts")
+
+          if gradle.exists():
+              g = gradle.read_text()
+
+              # Hard replace signing config block completely
+              g = re.sub(r'signingConfigs\s*{[\s\S]*?}', '', g, flags=re.DOTALL)
+
+              clean_block = '''
+              signingConfigs {
+                  create("release") {
+                      storeFile = file("signing/notes-release.jks")
+                      storePassword = "notespassword"
+                      keyAlias = "noteskey"
+                      keyPassword = "notespassword"
+                  }
+              }
+              '''
+
+              g = g.replace("android {", "android {\n" + clean_block)
+
+              # Ensure release uses it
+              if "signingConfig = signingConfigs.getByName(\"release\")" not in g:
+                  g = g.replace(
+                      "release {",
+                      'release {\n                signingConfig = signingConfigs.getByName("release")'
+                  )
+
+              gradle.write_text(g)
+
+          PY
+
+      - name: Ensure signing folder exists
+        run: |
+          mkdir -p app/signing
+          touch app/signing/.gitkeep
+
+      - name: Commit fix
+        run: |
+          git config user.name "Final Pipeline Fix"
+          git config user.email "actions@github.com"
+
+          git add .
+          git commit -m "Remove broken Gradle patch + fix signing permanently" || echo "No changes"
+          git push || echo "Push skipped"
