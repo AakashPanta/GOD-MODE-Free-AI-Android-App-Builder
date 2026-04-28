@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   production:
-    name: Upgrade, Build, Sign, and Package Notes
+    name: Build Notes Production APK/AAB
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
@@ -36,7 +36,7 @@ jobs:
 
       - name: Prepare environment
         run: |
-          mkdir -p "$ANDROID_USER_HOME" "$GRADLE_USER_HOME" build-logs signing
+          mkdir -p "$ANDROID_USER_HOME" "$GRADLE_USER_HOME" build-logs app/signing
           chmod -R 777 "$ANDROID_USER_HOME" "$GRADLE_USER_HOME"
 
       - name: Install packages
@@ -54,8 +54,10 @@ jobs:
         run: |
           sudo mkdir -p "$ANDROID_HOME/cmdline-tools"
           cd /tmp
+
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
           unzip -q cmdline-tools.zip
+
           sudo rm -rf "$ANDROID_HOME/cmdline-tools/latest"
           sudo mv cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
 
@@ -66,98 +68,133 @@ jobs:
 
           sudo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
+            "platforms;android-34" \
+            "build-tools;34.0.0"
 
-      - name: Patch Gradle for production signing and versioning
+      - name: Configure Gradle production files
         env:
           VERSION_CODE: ${{ github.event.inputs.version_code }}
           VERSION_NAME: ${{ github.event.inputs.version_name }}
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-          import re
-          import os
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
 
-          version_code = os.environ["VERSION_CODE"]
-          version_name = os.environ["VERSION_NAME"]
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
 
-          gradle = Path("app/build.gradle.kts")
-          if not gradle.exists():
-              raise SystemExit("app/build.gradle.kts not found")
+          rootProject.name = "Notes"
+          include(":app")
+          EOF
 
-          text = gradle.read_text()
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.3.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+          }
+          EOF
 
-          text = re.sub(r'namespace\s*=\s*"[^"]+"', 'namespace = "com.notes.app"', text)
-          text = re.sub(r'applicationId\s*=\s*"[^"]+"', 'applicationId = "com.notes.app"', text)
-          text = re.sub(r'versionCode\s*=\s*\d+', f'versionCode = {version_code}', text)
-          text = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "{version_name}"', text)
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          kotlin.code.style=official
+          EOF
 
-          if "signingConfigs" not in text:
-              text = text.replace(
-                  "android {",
-                  """android {
+          cat > app/build.gradle.kts <<EOF
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.notes.app"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.notes.app"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = ${VERSION_CODE}
+                  versionName = "${VERSION_NAME}"
+              }
+
               signingConfigs {
                   create("release") {
-                      storeFile = file(System.getenv("SIGNING_KEYSTORE_PATH") ?: "signing/notes-release.jks")
-                      storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: "notespassword"
-                      keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "noteskey"
-                      keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: "notespassword"
+                      storeFile = file("signing/notes-release.jks")
+                      storePassword = "notespassword"
+                      keyAlias = "noteskey"
+                      keyPassword = "notespassword"
                   }
               }
-          """
-              )
 
-          if "release {" not in text:
-              text = text.replace(
-                  "kotlinOptions {",
-                  """buildTypes {
+              buildTypes {
+                  debug {
+                      applicationIdSuffix = ".debug"
+                      versionNameSuffix = "-debug"
+                  }
+
                   release {
                       isMinifyEnabled = false
                       isShrinkResources = false
                       signingConfig = signingConfigs.getByName("release")
                   }
-                  debug {
-                      applicationIdSuffix = ".debug"
-                      versionNameSuffix = "-debug"
-                  }
               }
 
-              kotlinOptions {"""
-              )
-          elif "signingConfig = signingConfigs.getByName(\"release\")" not in text:
-              text = text.replace(
-                  "release {",
-                  """release {
-                      signingConfig = signingConfigs.getByName("release")"""
-              )
+              buildFeatures {
+                  compose = true
+              }
 
-          gradle.write_text(text)
+              composeOptions {
+                  kotlinCompilerExtensionVersion = "1.5.10"
+              }
 
-          props = Path("gradle.properties")
-          prop_text = props.read_text() if props.exists() else ""
-          required = {
-              "android.useAndroidX": "true",
-              "android.enableJetifier": "true",
-              "org.gradle.jvmargs": "-Xmx4096m -Dfile.encoding=UTF-8",
-              "kotlin.code.style": "official",
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
           }
 
-          for k, v in required.items():
-              if k not in prop_text:
-                  prop_text += f"\\n{k}={v}"
+          dependencies {
+              implementation("androidx.core:core-ktx:1.12.0")
+              implementation("androidx.activity:activity-compose:1.8.2")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
 
-          props.write_text(prop_text.strip() + "\\n")
-          PY
+              implementation(platform("androidx.compose:compose-bom:2024.02.01"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-tooling-preview")
+              implementation("androidx.compose.foundation:foundation")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.material:material-icons-extended")
 
-      - name: Create release keystore
+              debugImplementation("androidx.compose.ui:ui-tooling")
+          }
+          EOF
+
+      - name: Verify release keystore exists
         run: |
-          KEYSTORE_PATH="signing/notes-release.jks"
+          if [ ! -f app/signing/notes-release.jks ]; then
+            echo "Release keystore missing. Creating a new one at app/signing/notes-release.jks"
+            mkdir -p app/signing
 
-          if [ ! -f "$KEYSTORE_PATH" ]; then
             keytool -genkeypair \
               -v \
-              -keystore "$KEYSTORE_PATH" \
+              -keystore app/signing/notes-release.jks \
               -storepass notespassword \
               -alias noteskey \
               -keypass notespassword \
@@ -167,7 +204,12 @@ jobs:
               -dname "CN=Notes,O=Notes App,C=US"
           fi
 
-          keytool -list -keystore "$KEYSTORE_PATH" -storepass notespassword || true
+          ls -lh app/signing/notes-release.jks
+
+          keytool -list \
+            -keystore app/signing/notes-release.jks \
+            -storepass notespassword \
+            -alias noteskey
 
       - name: Create debug keystore
         run: |
@@ -187,8 +229,9 @@ jobs:
       - name: Ensure Gradle wrapper
         run: |
           if [ ! -f ./gradlew ]; then
-            gradle wrapper --gradle-version 8.10.2
+            gradle wrapper --gradle-version 8.7
           fi
+
           chmod +x ./gradlew
 
       - name: Build debug APK
@@ -197,26 +240,17 @@ jobs:
           ./gradlew clean assembleDebug --stacktrace --info 2>&1 | tee build-logs/debug-build.log
 
       - name: Build signed release APK
-        env:
-          SIGNING_KEYSTORE_PATH: signing/notes-release.jks
-          SIGNING_STORE_PASSWORD: notespassword
-          SIGNING_KEY_ALIAS: noteskey
-          SIGNING_KEY_PASSWORD: notespassword
         run: |
           set -o pipefail
           ./gradlew assembleRelease --stacktrace --info 2>&1 | tee build-logs/release-apk-build.log
 
       - name: Build signed release AAB
-        env:
-          SIGNING_KEYSTORE_PATH: signing/notes-release.jks
-          SIGNING_STORE_PASSWORD: notespassword
-          SIGNING_KEY_ALIAS: noteskey
-          SIGNING_KEY_PASSWORD: notespassword
         run: |
           set -o pipefail
           ./gradlew bundleRelease --stacktrace --info 2>&1 | tee build-logs/release-aab-build.log
 
-      - name: Generate release report
+      - name: Generate build report
+        if: always()
         run: |
           cat > BUILD_REPORT.md <<EOF
           # Notes Production Build Report
@@ -231,13 +265,14 @@ jobs:
           - Signed Release APK
           - Signed Release AAB
           - Build logs
-          - Release keystore artifact
+          - Release keystore backup
 
-          ## Warning
-          The generated release keystore is uploaded as an artifact. For real Play Store publishing, save it securely and reuse the same keystore for future updates.
+          ## Important
+          Save the release keystore artifact safely. You need the same keystore for future app updates.
           EOF
 
       - name: Upload debug APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: notes-debug-apk
@@ -245,6 +280,7 @@ jobs:
             **/build/outputs/apk/debug/*.apk
 
       - name: Upload signed release APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: notes-signed-release-apk
@@ -252,18 +288,20 @@ jobs:
             **/build/outputs/apk/release/*.apk
 
       - name: Upload signed release AAB
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: notes-signed-release-aab
           path: |
             **/build/outputs/bundle/release/*.aab
 
-      - name: Upload keystore
+      - name: Upload release keystore backup
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: notes-release-keystore-save-this
           path: |
-            signing/notes-release.jks
+            app/signing/notes-release.jks
 
       - name: Upload build logs
         if: always()
@@ -283,5 +321,5 @@ jobs:
           git config user.email "actions@github.com"
 
           git add .
-          git commit -m "Configure Notes production release build" || echo "No changes to commit"
+          git commit -m "Configure Notes production pipeline" || echo "No changes to commit"
           git push || echo "Push skipped"
