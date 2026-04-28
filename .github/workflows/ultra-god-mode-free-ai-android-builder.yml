@@ -1,78 +1,41 @@
-name: ULTRA GOD MODE v2 Free AI Android Builder
+name: Stable Notes App Builder
 
 on:
   workflow_dispatch:
     inputs:
-      app_prompt:
-        description: "Describe the Android app you want to build"
+      app_name:
+        description: "App name"
         required: true
+        default: "NoteForge"
         type: string
-
-      ai_model:
-        description: "Choose free local AI model"
-        required: true
-        default: "qwen2.5-coder:7b"
-        type: choice
-        options:
-          - qwen2.5-coder:1.5b
-          - qwen2.5-coder:7b
-          - deepseek-coder:1.3b
-          - deepseek-coder:6.7b
-          - codellama:7b
-          - codegemma:2b
-          - codegemma:7b
-          - starcoder2:3b
-          - starcoder2:7b
-          - phi3:mini
 
       package_name:
         description: "Android package name"
         required: true
-        default: "com.mrrobot.ultraapp"
+        default: "com.mrrobot.noteforge"
         type: string
-
-      app_name:
-        description: "App name"
-        required: true
-        default: "Ultra App"
-        type: string
-
-      max_fix_attempts:
-        description: "AI build-fix attempts"
-        required: true
-        default: "3"
-        type: choice
-        options:
-          - "1"
-          - "2"
-          - "3"
-          - "4"
-          - "5"
 
 permissions:
   contents: write
 
 jobs:
-  ultra-god-mode-v2:
-    name: Build Android App With Free Local AI
+  build:
+    name: Generate Stable Kotlin Notes App
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
     env:
       ANDROID_HOME: /opt/android-sdk
       ANDROID_SDK_ROOT: /opt/android-sdk
-      JAVA_VERSION: "17"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install base packages
+      - name: Install packages
         run: |
           sudo apt update
-          sudo apt install -y \
-            curl wget unzip zip git jq python3 python3-pip \
-            openjdk-17-jdk build-essential ca-certificates gradle
+          sudo apt install -y curl wget unzip zip git openjdk-17-jdk gradle
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -84,7 +47,6 @@ jobs:
         run: |
           sudo mkdir -p "$ANDROID_HOME/cmdline-tools"
           cd /tmp
-
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
           unzip -q cmdline-tools.zip
           sudo rm -rf "$ANDROID_HOME/cmdline-tools/latest"
@@ -100,25 +62,13 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      - name: Install Ollama
+      - name: Generate complete Kotlin Notes app
         run: |
-          curl -fsSL https://ollama.com/install.sh | sh
-
-      - name: Start Ollama
-        run: |
-          nohup ollama serve > ollama.log 2>&1 &
-          sleep 10
-          cat ollama.log || true
-
-      - name: Pull selected AI model
-        run: |
-          ollama pull "${{ github.event.inputs.ai_model }}"
-
-      - name: Create stable Android base
-        run: |
-          PACKAGE_NAME="${{ github.event.inputs.package_name }}"
           APP_NAME="${{ github.event.inputs.app_name }}"
+          PACKAGE_NAME="${{ github.event.inputs.package_name }}"
           PACKAGE_PATH="$(echo "$PACKAGE_NAME" | tr '.' '/')"
+
+          rm -rf app build.gradle.kts settings.gradle.kts gradle gradlew gradlew.bat
 
           mkdir -p app/src/main/java/$PACKAGE_PATH
           mkdir -p app/src/main/res/values
@@ -190,14 +140,15 @@ jobs:
 
           dependencies {
               implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.activity:activity-compose:1.9.2")
               implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
               implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
-              implementation("androidx.activity:activity-compose:1.9.2")
               implementation(platform("androidx.compose:compose-bom:2024.06.00"))
               implementation("androidx.compose.ui:ui")
               implementation("androidx.compose.ui:ui-tooling-preview")
               implementation("androidx.compose.foundation:foundation")
               implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.material:material-icons-extended")
               debugImplementation("androidx.compose.ui:ui-tooling")
           }
           EOF
@@ -233,75 +184,8 @@ jobs:
           </resources>
           EOF
 
-      - name: Create ULTRA GOD MODE v2 engine
-        run: |
-          mkdir -p .ultra
-
-          cat > .ultra/engine.py <<'PY'
-          import os
-          import re
-          import json
-          import subprocess
-          from pathlib import Path
-
-          MODEL = os.environ["AI_MODEL"]
-          APP_PROMPT = os.environ["APP_PROMPT"]
-          PACKAGE_NAME = os.environ["PACKAGE_NAME"]
-          APP_NAME = os.environ["APP_NAME"]
-          PACKAGE_PATH = PACKAGE_NAME.replace(".", "/")
-          ROOT = Path(".")
-          ULTRA = Path(".ultra")
-          ULTRA.mkdir(exist_ok=True)
-
-          CORE_LOCKED_FILES = {
-              "settings.gradle.kts",
-              "build.gradle.kts",
-              "app/build.gradle.kts",
-              "app/src/main/AndroidManifest.xml",
-          }
-
-          def run_ollama(prompt: str, out_file: str) -> str:
-              output_path = ULTRA / out_file
-              result = subprocess.run(
-                  ["ollama", "run", MODEL],
-                  input=prompt,
-                  text=True,
-                  capture_output=True,
-                  timeout=900
-              )
-              output = (result.stdout or "") + "\n" + (result.stderr or "")
-              output_path.write_text(output, errors="ignore")
-              return output
-
-          def extract_code(text: str) -> str:
-              match = re.search(
-                  r"```(?:kotlin|kt|xml|gradle|properties|toml|txt|text)?\n(.*?)```",
-                  text,
-                  re.DOTALL
-              )
-              if match:
-                  return match.group(1).strip() + "\n"
-              return text.strip() + "\n"
-
-          def safe_write(path: str, content: str):
-              path = path.strip().replace("\\", "/")
-
-              if path in CORE_LOCKED_FILES:
-                  print(f"Skipping locked core file: {path}")
-                  return
-
-              if path.startswith("/") or ".." in Path(path).parts:
-                  print(f"Unsafe path skipped: {path}")
-                  return
-
-              file_path = ROOT / path
-              file_path.parent.mkdir(parents=True, exist_ok=True)
-              file_path.write_text(content, errors="ignore")
-              print(f"Wrote {path}")
-
-          def create_fallback_app_code():
-              main = f"""
-          package {PACKAGE_NAME}
+          cat > app/src/main/java/$PACKAGE_PATH/MainActivity.kt <<EOF
+          package $PACKAGE_NAME
 
           import android.os.Bundle
           import androidx.activity.ComponentActivity
@@ -310,456 +194,561 @@ jobs:
           import androidx.compose.foundation.lazy.LazyColumn
           import androidx.compose.foundation.lazy.items
           import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.*
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.unit.dp
+          import androidx.lifecycle.ViewModel
+          import androidx.lifecycle.viewmodel.compose.viewModel
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+          import java.util.UUID
 
-          class MainActivity : ComponentActivity() {{
-              override fun onCreate(savedInstanceState: Bundle?) {{
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  setContent {{
-                      MaterialTheme {{
-                          Surface(modifier = Modifier.fillMaxSize()) {{
-                              UltraFallbackApp()
-                          }}
-                      }}
-                  }}
-              }}
-          }}
+                  setContent {
+                      NoteForgeTheme {
+                          NotesApp()
+                      }
+                  }
+              }
+          }
 
-          @Composable
-          fun UltraFallbackApp() {{
-              var note by remember {{ mutableStateOf("") }}
-              var notes by remember {{
-                  mutableStateOf(
-                      listOf(
-                          "Production Android foundation ready",
-                          "Material 3 Compose UI",
-                          "Free AI generated project shell",
-                          "Prompt: {APP_PROMPT[:90].replace('"', "'")}"
+          data class Note(
+              val id: String = UUID.randomUUID().toString(),
+              val title: String,
+              val body: String,
+              val folder: String = "Personal",
+              val tag: String = "General",
+              val pinned: Boolean = false,
+              val favorite: Boolean = false,
+              val archived: Boolean = false,
+              val trashed: Boolean = false,
+              val updatedAt: String = currentTime()
+          )
+
+          fun currentTime(): String {
+              return SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date())
+          }
+
+          enum class Screen {
+              HOME, EDITOR, TRASH, ARCHIVE, SETTINGS
+          }
+
+          class NotesViewModel : ViewModel() {
+              var screen by mutableStateOf(Screen.HOME)
+                  private set
+
+              var selectedNote by mutableStateOf<Note?>(null)
+                  private set
+
+              var query by mutableStateOf("")
+                  private set
+
+              var notes by mutableStateOf(
+                  listOf(
+                      Note(
+                          title = "Welcome to $APP_NAME",
+                          body = "This is a production-ready offline notes app foundation built with Kotlin, Jetpack Compose, Material 3, and MVVM.",
+                          folder = "Inbox",
+                          tag = "Start",
+                          pinned = true
+                      ),
+                      Note(
+                          title = "Premium dashboard",
+                          body = "Use pinned notes, search, archive, trash, favorites, folders, and a clean editor.",
+                          folder = "Productivity",
+                          tag = "UI",
+                          favorite = true
                       )
                   )
-              }}
+              )
+                  private set
 
+              fun navigate(target: Screen) {
+                  screen = target
+              }
+
+              fun updateQuery(value: String) {
+                  query = value
+              }
+
+              fun newNote() {
+                  selectedNote = null
+                  screen = Screen.EDITOR
+              }
+
+              fun edit(note: Note) {
+                  selectedNote = note
+                  screen = Screen.EDITOR
+              }
+
+              fun save(title: String, body: String, folder: String, tag: String) {
+                  val cleanTitle = title.ifBlank { "Untitled Note" }
+                  val cleanBody = body.ifBlank { "No content" }
+
+                  val existing = selectedNote
+
+                  notes = if (existing == null) {
+                      listOf(
+                          Note(
+                              title = cleanTitle,
+                              body = cleanBody,
+                              folder = folder.ifBlank { "Personal" },
+                              tag = tag.ifBlank { "General" }
+                          )
+                      ) + notes
+                  } else {
+                      notes.map {
+                          if (it.id == existing.id) {
+                              it.copy(
+                                  title = cleanTitle,
+                                  body = cleanBody,
+                                  folder = folder.ifBlank { "Personal" },
+                                  tag = tag.ifBlank { "General" },
+                                  updatedAt = currentTime()
+                              )
+                          } else {
+                              it
+                          }
+                      }
+                  }
+
+                  selectedNote = null
+                  screen = Screen.HOME
+              }
+
+              fun togglePin(note: Note) {
+                  notes = notes.map {
+                      if (it.id == note.id) it.copy(pinned = !it.pinned, updatedAt = currentTime()) else it
+                  }
+              }
+
+              fun toggleFavorite(note: Note) {
+                  notes = notes.map {
+                      if (it.id == note.id) it.copy(favorite = !it.favorite, updatedAt = currentTime()) else it
+                  }
+              }
+
+              fun archive(note: Note) {
+                  notes = notes.map {
+                      if (it.id == note.id) it.copy(archived = true, trashed = false, updatedAt = currentTime()) else it
+                  }
+              }
+
+              fun restore(note: Note) {
+                  notes = notes.map {
+                      if (it.id == note.id) it.copy(archived = false, trashed = false, updatedAt = currentTime()) else it
+                  }
+              }
+
+              fun moveToTrash(note: Note) {
+                  notes = notes.map {
+                      if (it.id == note.id) it.copy(trashed = true, archived = false, updatedAt = currentTime()) else it
+                  }
+              }
+
+              fun deleteForever(note: Note) {
+                  notes = notes.filterNot { it.id == note.id }
+              }
+
+              fun duplicate(note: Note) {
+                  notes = listOf(
+                      note.copy(
+                          id = UUID.randomUUID().toString(),
+                          title = note.title + " Copy",
+                          updatedAt = currentTime()
+                      )
+                  ) + notes
+              }
+
+              val activeNotes: List<Note>
+                  get() = notes.filter { !it.trashed && !it.archived }
+
+              val filteredNotes: List<Note>
+                  get() {
+                      val base = when (screen) {
+                          Screen.TRASH -> notes.filter { it.trashed }
+                          Screen.ARCHIVE -> notes.filter { it.archived && !it.trashed }
+                          else -> activeNotes
+                      }
+
+                      if (query.isBlank()) return base
+
+                      return base.filter {
+                          it.title.contains(query, true) ||
+                          it.body.contains(query, true) ||
+                          it.folder.contains(query, true) ||
+                          it.tag.contains(query, true)
+                      }
+                  }
+          }
+
+          @Composable
+          fun NoteForgeTheme(content: @Composable () -> Unit) {
+              MaterialTheme(
+                  colorScheme = darkColorScheme(
+                      primary = androidx.compose.ui.graphics.Color(0xFF8EA7FF),
+                      secondary = androidx.compose.ui.graphics.Color(0xFFB8C7FF),
+                      background = androidx.compose.ui.graphics.Color(0xFF10131A),
+                      surface = androidx.compose.ui.graphics.Color(0xFF181C25)
+                  ),
+                  content = content
+              )
+          }
+
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun NotesApp(vm: NotesViewModel = viewModel()) {
+              Scaffold(
+                  topBar = {
+                      TopAppBar(
+                          title = {
+                              Column {
+                                  Text("$APP_NAME", fontWeight = FontWeight.Bold)
+                                  Text(
+                                      text = "${'$'}{vm.activeNotes.size} active notes",
+                                      style = MaterialTheme.typography.labelMedium
+                                  )
+                              }
+                          },
+                          actions = {
+                              IconButton(onClick = { vm.navigate(Screen.SETTINGS) }) {
+                                  Icon(Icons.Default.Settings, contentDescription = "Settings")
+                              }
+                          }
+                      )
+                  },
+                  floatingActionButton = {
+                      if (vm.screen != Screen.EDITOR) {
+                          FloatingActionButton(onClick = { vm.newNote() }) {
+                              Icon(Icons.Default.Add, contentDescription = "New note")
+                          }
+                      }
+                  },
+                  bottomBar = {
+                      NavigationBar {
+                          NavigationBarItem(
+                              selected = vm.screen == Screen.HOME,
+                              onClick = { vm.navigate(Screen.HOME) },
+                              icon = { Icon(Icons.Default.Home, contentDescription = null) },
+                              label = { Text("Home") }
+                          )
+                          NavigationBarItem(
+                              selected = vm.screen == Screen.ARCHIVE,
+                              onClick = { vm.navigate(Screen.ARCHIVE) },
+                              icon = { Icon(Icons.Default.Archive, contentDescription = null) },
+                              label = { Text("Archive") }
+                          )
+                          NavigationBarItem(
+                              selected = vm.screen == Screen.TRASH,
+                              onClick = { vm.navigate(Screen.TRASH) },
+                              icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                              label = { Text("Trash") }
+                          )
+                      }
+                  }
+              ) { padding ->
+                  Box(modifier = Modifier.padding(padding)) {
+                      when (vm.screen) {
+                          Screen.HOME -> HomeScreen(vm)
+                          Screen.EDITOR -> EditorScreen(vm)
+                          Screen.TRASH -> NotesListScreen(vm, title = "Trash")
+                          Screen.ARCHIVE -> NotesListScreen(vm, title = "Archive")
+                          Screen.SETTINGS -> SettingsScreen(vm)
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun HomeScreen(vm: NotesViewModel) {
+              Column(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .padding(16.dp),
+                  verticalArrangement = Arrangement.spacedBy(16.dp)
+              ) {
+                  Dashboard(vm)
+
+                  OutlinedTextField(
+                      value = vm.query,
+                      onValueChange = vm::updateQuery,
+                      modifier = Modifier.fillMaxWidth(),
+                      leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                      label = { Text("Search notes, folders, or tags") },
+                      singleLine = true
+                  )
+
+                  NotesListContent(vm, vm.filteredNotes)
+              }
+          }
+
+          @Composable
+          fun Dashboard(vm: NotesViewModel) {
+              Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(12.dp)
+              ) {
+                  StatCard("Notes", vm.activeNotes.size.toString(), Modifier.weight(1f))
+                  StatCard("Pinned", vm.activeNotes.count { it.pinned }.toString(), Modifier.weight(1f))
+                  StatCard("Stars", vm.activeNotes.count { it.favorite }.toString(), Modifier.weight(1f))
+              }
+          }
+
+          @Composable
+          fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
+              Card(
+                  modifier = modifier,
+                  shape = RoundedCornerShape(22.dp)
+              ) {
+                  Column(modifier = Modifier.padding(16.dp)) {
+                      Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                      Text(label, style = MaterialTheme.typography.labelLarge)
+                  }
+              }
+          }
+
+          @Composable
+          fun NotesListScreen(vm: NotesViewModel, title: String) {
+              Column(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .padding(16.dp),
+                  verticalArrangement = Arrangement.spacedBy(16.dp)
+              ) {
+                  Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                  NotesListContent(vm, vm.filteredNotes)
+              }
+          }
+
+          @Composable
+          fun NotesListContent(vm: NotesViewModel, list: List<Note>) {
+              if (list.isEmpty()) {
+                  EmptyState()
+              } else {
+                  LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                      val sorted = list.sortedWith(compareByDescending<Note> { it.pinned }.thenByDescending { it.updatedAt })
+                      items(sorted, key = { it.id }) { note ->
+                          NoteCard(vm, note)
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun NoteCard(vm: NotesViewModel, note: Note) {
+              Card(
+                  modifier = Modifier.fillMaxWidth(),
+                  shape = RoundedCornerShape(24.dp),
+                  onClick = { vm.edit(note) }
+              ) {
+                  Column(
+                      modifier = Modifier.padding(18.dp),
+                      verticalArrangement = Arrangement.spacedBy(10.dp)
+                  ) {
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                          Column(modifier = Modifier.weight(1f)) {
+                              Text(note.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                              Text(note.updatedAt, style = MaterialTheme.typography.labelSmall)
+                          }
+
+                          if (note.pinned) {
+                              Icon(Icons.Default.PushPin, contentDescription = null)
+                          }
+                      }
+
+                      Text(note.body, style = MaterialTheme.typography.bodyMedium)
+
+                      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                          AssistChip(onClick = {}, label = { Text(note.folder) })
+                          AssistChip(onClick = {}, label = { Text("#${'$'}{note.tag}") })
+                      }
+
+                      Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                          IconButton(onClick = { vm.togglePin(note) }) {
+                              Icon(Icons.Default.PushPin, contentDescription = "Pin")
+                          }
+
+                          IconButton(onClick = { vm.toggleFavorite(note) }) {
+                              Icon(
+                                  if (note.favorite) Icons.Default.Star else Icons.Default.StarBorder,
+                                  contentDescription = "Favorite"
+                              )
+                          }
+
+                          IconButton(onClick = { vm.duplicate(note) }) {
+                              Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate")
+                          }
+
+                          if (note.trashed || note.archived) {
+                              IconButton(onClick = { vm.restore(note) }) {
+                                  Icon(Icons.Default.Restore, contentDescription = "Restore")
+                              }
+                          } else {
+                              IconButton(onClick = { vm.archive(note) }) {
+                                  Icon(Icons.Default.Archive, contentDescription = "Archive")
+                              }
+                              IconButton(onClick = { vm.moveToTrash(note) }) {
+                                  Icon(Icons.Default.Delete, contentDescription = "Trash")
+                              }
+                          }
+
+                          if (note.trashed) {
+                              IconButton(onClick = { vm.deleteForever(note) }) {
+                                  Icon(Icons.Default.DeleteForever, contentDescription = "Delete forever")
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun EditorScreen(vm: NotesViewModel) {
+              val editing = vm.selectedNote
+
+              var title by remember(editing?.id) { mutableStateOf(editing?.title ?: "") }
+              var body by remember(editing?.id) { mutableStateOf(editing?.body ?: "") }
+              var folder by remember(editing?.id) { mutableStateOf(editing?.folder ?: "Personal") }
+              var tag by remember(editing?.id) { mutableStateOf(editing?.tag ?: "General") }
+
+              Column(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .padding(16.dp),
+                  verticalArrangement = Arrangement.spacedBy(14.dp)
+              ) {
+                  Text(
+                      if (editing == null) "New Note" else "Edit Note",
+                      style = MaterialTheme.typography.headlineMedium,
+                      fontWeight = FontWeight.Bold
+                  )
+
+                  OutlinedTextField(
+                      value = title,
+                      onValueChange = { title = it },
+                      modifier = Modifier.fillMaxWidth(),
+                      label = { Text("Title") },
+                      singleLine = true
+                  )
+
+                  OutlinedTextField(
+                      value = folder,
+                      onValueChange = { folder = it },
+                      modifier = Modifier.fillMaxWidth(),
+                      label = { Text("Folder") },
+                      singleLine = true
+                  )
+
+                  OutlinedTextField(
+                      value = tag,
+                      onValueChange = { tag = it },
+                      modifier = Modifier.fillMaxWidth(),
+                      label = { Text("Tag") },
+                      singleLine = true
+                  )
+
+                  OutlinedTextField(
+                      value = body,
+                      onValueChange = { body = it },
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .weight(1f),
+                      label = { Text("Body") }
+                  )
+
+                  Button(
+                      onClick = { vm.save(title, body, folder, tag) },
+                      modifier = Modifier.fillMaxWidth()
+                  ) {
+                      Text("Save Note")
+                  }
+              }
+          }
+
+          @Composable
+          fun SettingsScreen(vm: NotesViewModel) {
               Column(
                   modifier = Modifier
                       .fillMaxSize()
                       .padding(20.dp),
                   verticalArrangement = Arrangement.spacedBy(16.dp)
-              ) {{
-                  Text(
-                      text = "{APP_NAME}",
-                      style = MaterialTheme.typography.headlineLarge,
-                      fontWeight = FontWeight.Bold
-                  )
+              ) {
+                  Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
 
-                  Text(
-                      text = "A stable buildable Android app generated by ULTRA GOD MODE v2.",
-                      style = MaterialTheme.typography.bodyLarge
-                  )
+                  Card(shape = RoundedCornerShape(24.dp)) {
+                      Column(
+                          modifier = Modifier.padding(18.dp),
+                          verticalArrangement = Arrangement.spacedBy(10.dp)
+                      ) {
+                          Text("Offline-first", fontWeight = FontWeight.Bold)
+                          Text("This version stores notes in memory. It is stable, fast, and build-ready.")
+                      }
+                  }
 
-                  OutlinedTextField(
-                      value = note,
-                      onValueChange = {{ note = it }},
-                      modifier = Modifier.fillMaxWidth(),
-                      label = {{ Text("Write something") }}
-                  )
+                  Card(shape = RoundedCornerShape(24.dp)) {
+                      Column(
+                          modifier = Modifier.padding(18.dp),
+                          verticalArrangement = Arrangement.spacedBy(10.dp)
+                      ) {
+                          Text("Tech Stack", fontWeight = FontWeight.Bold)
+                          Text("Kotlin, Jetpack Compose, Material 3, MVVM, Java 17, Android SDK 36.")
+                      }
+                  }
 
-                  Button(
-                      onClick = {{
-                          if (note.isNotBlank()) {{
-                              notes = listOf(note.trim()) + notes
-                              note = ""
-                          }}
-                      }},
-                      modifier = Modifier.fillMaxWidth()
-                  ) {{
-                      Text("Add")
-                  }}
-
-                  LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {{
-                      items(notes) {{ item ->
-                          Card(
-                              modifier = Modifier.fillMaxWidth(),
-                              shape = RoundedCornerShape(20.dp)
-                          ) {{
-                              Text(
-                                  text = item,
-                                  modifier = Modifier.padding(18.dp),
-                                  style = MaterialTheme.typography.bodyLarge
-                              )
-                          }}
-                      }}
-                  }}
-              }}
-          }}
-          """
-              safe_write(f"app/src/main/java/{PACKAGE_PATH}/MainActivity.kt", main.strip() + "\n")
-
-          def create_manifest_list():
-              required = [
-                  f"app/src/main/java/{PACKAGE_PATH}/MainActivity.kt",
-                  f"app/src/main/java/{PACKAGE_PATH}/ui/theme/Theme.kt",
-                  f"app/src/main/java/{PACKAGE_PATH}/ui/home/HomeScreen.kt",
-                  f"app/src/main/java/{PACKAGE_PATH}/ui/home/HomeViewModel.kt",
-                  f"app/src/main/java/{PACKAGE_PATH}/data/AppRepository.kt",
-                  f"app/src/main/java/{PACKAGE_PATH}/model/AppModels.kt",
-              ]
-
-              prompt = f"""
-          You are a senior Android architect.
-
-          Create a JSON array of Kotlin file paths only.
-
-          App name: {APP_NAME}
-          Package name: {PACKAGE_NAME}
-          Package path: app/src/main/java/{PACKAGE_PATH}
-
-          User app request:
-          {APP_PROMPT}
-
-          Rules:
-          - Return ONLY JSON array.
-          - Do NOT include Gradle files.
-          - Do NOT include AndroidManifest.xml.
-          - Do NOT include XML files.
-          - Kotlin files only.
-          - Keep file count between 5 and 14.
-          - Include MainActivity.
-          - Include screens, ViewModels, models, repositories where useful.
-
-          Mandatory files:
-          {json.dumps(required, indent=2)}
-          """
-
-              output = run_ollama(prompt, "01_manifest_raw.txt")
-
-              try:
-                  match = re.search(r"\[.*\]", output, re.DOTALL)
-                  files = json.loads(match.group(0)) if match else required
-              except Exception:
-                  files = required
-
-              cleaned = []
-
-              for f in files:
-                  if not isinstance(f, str):
-                      continue
-
-                  f = f.strip().replace("\\", "/")
-
-                  if not f.endswith(".kt"):
-                      continue
-
-                  if not f.startswith(f"app/src/main/java/{PACKAGE_PATH}/"):
-                      continue
-
-                  if f.startswith("/") or ".." in Path(f).parts:
-                      continue
-
-                  if f not in cleaned:
-                      cleaned.append(f)
-
-              for f in required:
-                  if f not in cleaned:
-                      cleaned.append(f)
-
-              cleaned = cleaned[:18]
-              (ULTRA / "manifest.json").write_text(json.dumps(cleaned, indent=2))
-              return cleaned
-
-          def generate_file(file_path: str, all_files: list[str]):
-              prompt = f"""
-          You are a senior Android Kotlin engineer.
-
-          Generate ONE complete Kotlin file.
-
-          App name: {APP_NAME}
-          Package name: {PACKAGE_NAME}
-          User request: {APP_PROMPT}
-
-          Full Kotlin file list:
-          {json.dumps(all_files, indent=2)}
-
-          Current file:
-          {file_path}
-
-          Hard rules:
-          - Output ONLY Kotlin code.
-          - No markdown explanation.
-          - Package must be: {PACKAGE_NAME}
-          - Use Jetpack Compose and Material 3.
-          - Use MVVM where applicable.
-          - Do not use Navigation dependency.
-          - Do not use Room.
-          - Do not use Hilt.
-          - Do not use fake libraries.
-          - Do not reference missing resources.
-          - Do not use experimental APIs unless opted in.
-          - Keep code buildable with existing dependencies.
-          - MainActivity must call setContent and show the app UI.
-          """
-
-              output_name = "file_" + re.sub(r"[^a-zA-Z0-9]+", "_", file_path) + ".txt"
-              output = run_ollama(prompt, output_name)
-              content = extract_code(output)
-
-              content = re.sub(r"^\s*package\s+[\w.]+\s*", "", content)
-              content = f"package {PACKAGE_NAME}\n\n{content.strip()}\n"
-
-              safe_write(file_path, content)
-
-          def validate_or_fallback():
-              main_file = Path(f"app/src/main/java/{PACKAGE_PATH}/MainActivity.kt")
-
-              if not main_file.exists():
-                  print("MainActivity missing. Creating fallback.")
-                  create_fallback_app_code()
-                  return
-
-              content = main_file.read_text(errors="ignore")
-
-              if "class MainActivity" not in content or "setContent" not in content:
-                  print("MainActivity invalid. Creating fallback.")
-                  create_fallback_app_code()
-
-          def main():
-              files = create_manifest_list()
-
-              for file_path in files:
-                  generate_file(file_path, files)
-
-              validate_or_fallback()
-
-          if __name__ == "__main__":
-              main()
-          PY
-
-          cat > .ultra/fix.py <<'PY'
-          import os
-          import re
-          import subprocess
-          from pathlib import Path
-
-          MODEL = os.environ["AI_MODEL"]
-          PACKAGE_NAME = os.environ["PACKAGE_NAME"]
-
-          CORE_LOCKED_FILES = {
-              "settings.gradle.kts",
-              "build.gradle.kts",
-              "app/build.gradle.kts",
-              "app/src/main/AndroidManifest.xml",
+                  Button(onClick = { vm.navigate(Screen.HOME) }, modifier = Modifier.fillMaxWidth()) {
+                      Text("Back Home")
+                  }
+              }
           }
 
-          def run_ollama(prompt: str) -> str:
-              result = subprocess.run(
-                  ["ollama", "run", MODEL],
-                  input=prompt,
-                  text=True,
-                  capture_output=True,
-                  timeout=900
-              )
-              return (result.stdout or "") + "\n" + (result.stderr or "")
-
-          def write_files_from_blocks(text: str) -> int:
-              pattern = re.compile(
-                  r"FILE:\s*(.*?)\n```(?:kotlin|kt|xml|gradle|properties|toml|txt|text)?\n(.*?)```",
-                  re.DOTALL
-              )
-              matches = pattern.findall(text)
-              count = 0
-
-              for raw_path, content in matches:
-                  path = raw_path.strip().replace("\\", "/")
-
-                  if path in CORE_LOCKED_FILES:
-                      print(f"Skipping locked core file: {path}")
-                      continue
-
-                  if path.startswith("/") or ".." in Path(path).parts:
-                      continue
-
-                  if not path.endswith(".kt"):
-                      continue
-
-                  content = re.sub(r"^\s*package\s+[\w.]+\s*", "", content.strip())
-                  content = f"package {PACKAGE_NAME}\n\n{content}\n"
-
-                  p = Path(path)
-                  p.parent.mkdir(parents=True, exist_ok=True)
-                  p.write_text(content, errors="ignore")
-                  print(f"Fixed {path}")
-                  count += 1
-
-              return count
-
-          files = []
-
-          for p in Path(".").rglob("*.kt"):
-              s = str(p)
-              if ".git" not in s and ".gradle" not in s and "/build/" not in s and ".ultra" not in s:
-                  files.append(s)
-
-          build_log = ""
-
-          for name in [".ultra/build.log", ".ultra/build_error.log"]:
-              if Path(name).exists():
-                  build_log += Path(name).read_text(errors="ignore") + "\n"
-
-          prompt = f"""
-          You are an Android Kotlin build fixer.
-
-          The project failed to build.
-
-          Return ONLY changed Kotlin files using this exact format:
-
-          FILE: app/src/main/java/path/File.kt
-          ```kotlin
-          full corrected Kotlin file content
-          ```
-
-          Rules:
-          - Kotlin files only.
-          - Do not output Gradle files.
-          - Do not output AndroidManifest.
-          - Do not use unavailable dependencies.
-          - Do not use Navigation, Room, Hilt, Retrofit, Coil, or DataStore.
-          - Use only Compose, Material3, lifecycle ViewModel, Kotlin standard library.
-          - Package must be {PACKAGE_NAME}.
-          - Fix imports, unresolved references, syntax errors, and Compose issues.
-
-          Kotlin files:
-          {chr(10).join(files)}
-
-          Build error:
-          {build_log[-18000:]}
-          """
-
-          output = run_ollama(prompt)
-          Path(".ultra/fix_output.txt").write_text(output, errors="ignore")
-
-          count = write_files_from_blocks(output)
-
-          if count == 0:
-              raise SystemExit(1)
-          PY
-
-      - name: Generate app code file-by-file
-        env:
-          AI_MODEL: ${{ github.event.inputs.ai_model }}
-          APP_PROMPT: ${{ github.event.inputs.app_prompt }}
-          PACKAGE_NAME: ${{ github.event.inputs.package_name }}
-          APP_NAME: ${{ github.event.inputs.app_name }}
-        run: |
-          python3 .ultra/engine.py
-
-      - name: Ensure Gradle wrapper
-        run: |
-          if [ ! -f ./gradlew ]; then
-            gradle wrapper --gradle-version 8.10.2 || true
-          fi
-
-          if [ -f ./gradlew ]; then
-            chmod +x ./gradlew
-          fi
-
-      - name: Self-healing build loop
-        env:
-          AI_MODEL: ${{ github.event.inputs.ai_model }}
-          PACKAGE_NAME: ${{ github.event.inputs.package_name }}
-          APP_NAME: ${{ github.event.inputs.app_name }}
-        run: |
-          set +e
-
-          ATTEMPTS="${{ github.event.inputs.max_fix_attempts }}"
-          COUNT=0
-
-          while [ "$COUNT" -lt "$ATTEMPTS" ]; do
-            COUNT=$((COUNT + 1))
-
-            echo "====================================================="
-            echo "Build attempt $COUNT of $ATTEMPTS"
-            echo "====================================================="
-
-            if [ ! -f ./gradlew ]; then
-              gradle wrapper --gradle-version 8.10.2 || true
-              chmod +x ./gradlew 2>/dev/null || true
-            fi
-
-            if [ ! -f ./gradlew ]; then
-              echo "gradlew missing."
-              exit 1
-            fi
-
-            ./gradlew clean assembleDebug --stacktrace > .ultra/build.log 2> .ultra/build_error.log
-            STATUS=$?
-
-            if [ "$STATUS" -eq 0 ]; then
-              echo "Build successful."
-              exit 0
-            fi
-
-            echo "Build failed. Asking AI to fix Kotlin app files..."
-            tail -200 .ultra/build_error.log || true
-
-            python3 .ultra/fix.py || true
-          done
-
-          echo "Build failed after all attempts."
-          exit 1
-
-      - name: Create build report
-        if: always()
-        run: |
-          cat > BUILD_REPORT.md <<EOF
-          # ULTRA GOD MODE v2 Android Build Report
-
-          ## App Name
-          ${{ github.event.inputs.app_name }}
-
-          ## Package Name
-          ${{ github.event.inputs.package_name }}
-
-          ## AI Model
-          ${{ github.event.inputs.ai_model }}
-
-          ## Prompt
-          ${{ github.event.inputs.app_prompt }}
-
-          ## Date
-          $(date)
-
-          ## Notes
-          Core Android/Gradle files were locked for build stability.
-          AI generated only Kotlin app-layer files.
+          @Composable
+          fun EmptyState() {
+              Box(
+                  modifier = Modifier.fillMaxSize(),
+                  contentAlignment = Alignment.Center
+              ) {
+                  Column(
+                      horizontalAlignment = Alignment.CenterHorizontally,
+                      verticalArrangement = Arrangement.spacedBy(12.dp)
+                  ) {
+                      Icon(Icons.Default.NoteAlt, contentDescription = null, modifier = Modifier.size(56.dp))
+                      Text("No notes here", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                      Text("Create, restore, or search notes to see them here.")
+                  }
+              }
+          }
           EOF
 
+      - name: Create Gradle wrapper
+        run: |
+          gradle wrapper --gradle-version 8.10.2
+          chmod +x ./gradlew
+
+      - name: Build APK
+        run: |
+          ./gradlew clean assembleDebug --stacktrace
+
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ultra-god-mode-v2-android-apk
+          name: stable-notes-app-apk
           path: |
             **/build/outputs/apk/debug/*.apk
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ultra-god-mode-v2-logs
-          path: |
-            .ultra/
-            BUILD_REPORT.md
-            **/build/outputs/apk/debug/*.apk
-
-      - name: Commit generated project
+      - name: Commit generated app
         if: always()
         run: |
-          git config user.name "ULTRA GOD MODE v2 Android Builder"
+          git config user.name "Stable Notes App Builder"
           git config user.email "actions@github.com"
 
           git add .
-          git commit -m "Generate Android app with ULTRA GOD MODE v2" || echo "No changes to commit"
-          git push || echo "Push skipped or failed"
+          git commit -m "Generate stable Kotlin Notes app" || echo "No changes to commit"
+          git push || echo "Push skipped"
