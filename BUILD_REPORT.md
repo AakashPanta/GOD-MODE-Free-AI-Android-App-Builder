@@ -1,21 +1,26 @@
-# Notes V3 Build Report
+# Notes V4 MVP Build Report
 
-Version Code: 3
-Version Name: 3.0.0
+Version Code: 4
+Version Name: 4.0.0
 
-## V3 Features
+## Fixed
+- Full-page Home scrolling
+- Tiny notes scroll-area bug
+- Duplicate save action removed
+- Professional editor layout
+- Search/filter/sort behavior
+- Local persistence
+- Theme persistence
+- View mode persistence
+
+## Included
+- Create/edit/delete notes
 - Labels
-- Search
-- Material theme presets
-- Dark/light theme
-- Export/import backup
-- List/grid view
-- Formatting helpers
-- Lock screen
-- Note color labels
-- Pinned/favorite/archive/trash
-- Settings/about pages
-- Persistent offline JSON storage
-
-## Note
-NotesMaster 3.0.4 is GPL-3.0 licensed. This V3 rebuild implements the same feature ideas natively instead of directly merging the original Java/WebView source.
+- Tags
+- Favorites
+- Pinned notes
+- Archive/trash
+- Dark/light mode
+- List/grid/compact view
+- Export/import
+- Build artifacts

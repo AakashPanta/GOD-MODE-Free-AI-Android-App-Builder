@@ -17,6 +17,7 @@ data class Note(
     val archived: Boolean = false,
     val trashed: Boolean = false,
     val locked: Boolean = false,
+    val createdAt: String = now(),
     val updatedAt: String = now()
 )
 
@@ -25,13 +26,8 @@ fun now(): String {
 }
 
 enum class Screen {
-    LOCK, ONBOARDING, HOME, EDITOR, LABELS, FAVORITES, ARCHIVE, TRASH, SETTINGS, EXPORT_IMPORT, ABOUT
+    LOCK, ONBOARDING, HOME, EDITOR, LABELS, FAVORITES, ARCHIVE, TRASH, SETTINGS, EXPORT_IMPORT, ABOUT, INSIGHTS
 }
 
-enum class ViewMode {
-    LIST, GRID
-}
-
-enum class SortMode {
-    UPDATED, TITLE, LABEL
-}
+enum class ViewMode { LIST, GRID, COMPACT }
+enum class SortMode { UPDATED, CREATED, TITLE, LABEL }

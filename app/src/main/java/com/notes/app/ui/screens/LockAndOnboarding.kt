@@ -17,7 +17,6 @@ import com.notes.app.NotesViewModel
 fun LockScreen(vm: NotesViewModel) {
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
-
     Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         ElevatedCard(shape = RoundedCornerShape(32.dp)) {
             Column(modifier = Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -37,11 +36,9 @@ fun OnboardingScreen(vm: NotesViewModel) {
         ElevatedCard(shape = RoundedCornerShape(36.dp)) {
             Column(modifier = Modifier.padding(30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 Icon(Icons.Default.NoteAlt, null, modifier = Modifier.size(72.dp))
-                Text("Notes V3", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                Text("Labels, search, themes, export/import, grid/list view, lock mode, formatting helpers, favorites, archive, trash, and persistent offline storage.")
-                Button(onClick = { vm.finishOnboarding() }, modifier = Modifier.fillMaxWidth().height(56.dp), shape = MaterialTheme.shapes.extraLarge) {
-                    Text("Start Writing")
-                }
+                Text("Notes", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                Text("Create, edit, organize, favorite, search, and save notes locally.")
+                Button(onClick = { vm.finishOnboarding() }, modifier = Modifier.fillMaxWidth().height(56.dp), shape = MaterialTheme.shapes.extraLarge) { Text("Start Writing") }
             }
         }
     }

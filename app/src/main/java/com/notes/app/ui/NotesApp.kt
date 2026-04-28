@@ -7,6 +7,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import com.notes.app.NotesViewModel
@@ -16,60 +18,49 @@ import com.notes.app.ui.screens.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotesApp(vm: NotesViewModel) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(vm.snackbarMessage) {
+        if (vm.snackbarMessage.isNotBlank()) {
+            snackbarHostState.showSnackbar(vm.snackbarMessage)
+            vm.consumeSnackbar()
+        }
+    }
+
     when (vm.screen) {
-        Screen.LOCK -> {
-            LockScreen(vm)
-            return
-        }
-        Screen.ONBOARDING -> {
-            OnboardingScreen(vm)
-            return
-        }
+        Screen.LOCK -> { LockScreen(vm); return }
+        Screen.ONBOARDING -> { OnboardingScreen(vm); return }
         else -> Unit
     }
 
     DeleteConfirmationDialog(vm)
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             LargeTopAppBar(
                 title = {
                     Column {
-                        Text("Notes V3", fontWeight = FontWeight.Bold)
-                        Text(
-                            text = "${vm.activeNotes.size} notes • ${vm.themeName} • ${vm.viewMode.name.lowercase()}",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Text("Notes", fontWeight = FontWeight.Bold)
+                        Text(text = "${vm.activeNotes.size} notes • ${vm.totalWords} words", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 navigationIcon = {
                     if (vm.screen == Screen.EDITOR) {
-                        IconButton(onClick = { vm.cancelEdit() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                        }
+                        IconButton(onClick = { vm.cancelEdit() }) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
                     }
                 },
                 actions = {
-                    IconButton(onClick = { vm.toggleViewMode() }) {
-                        Icon(if (vm.viewMode.name == "GRID") Icons.Default.ViewList else Icons.Default.GridView, contentDescription = "View")
+                    IconButton(onClick = { vm.cycleViewMode() }) {
+                        Icon(when (vm.viewMode.name) { "GRID" -> Icons.Default.GridView; "COMPACT" -> Icons.Default.ViewHeadline; else -> Icons.Default.ViewList }, contentDescription = "View")
                     }
-                    IconButton(onClick = { vm.toggleTheme() }) {
-                        Icon(if (vm.darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode, contentDescription = "Theme")
-                    }
-                    IconButton(onClick = { vm.navigate(Screen.SETTINGS) }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
+                    IconButton(onClick = { vm.toggleTheme() }) { Icon(if (vm.darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode, contentDescription = "Theme") }
+                    IconButton(onClick = { vm.navigate(Screen.SETTINGS) }) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
                 }
             )
         },
         floatingActionButton = {
             if (vm.screen != Screen.EDITOR) {
-                ExtendedFloatingActionButton(
-                    onClick = { vm.newNote() },
-                    icon = { Icon(Icons.Default.Add, contentDescription = "New note") },
-                    text = { Text("New Note") }
-                )
+                ExtendedFloatingActionButton(onClick = { vm.newNote() }, icon = { Icon(Icons.Default.Add, contentDescription = "New note") }, text = { Text("New Note") })
             }
         },
         bottomBar = {
@@ -94,6 +85,7 @@ fun NotesApp(vm: NotesViewModel) {
                 Screen.SETTINGS -> SettingsScreen(vm)
                 Screen.EXPORT_IMPORT -> ExportImportScreen(vm)
                 Screen.ABOUT -> AboutScreen(vm)
+                Screen.INSIGHTS -> InsightsScreen(vm)
                 else -> HomeScreen(vm)
             }
         }
