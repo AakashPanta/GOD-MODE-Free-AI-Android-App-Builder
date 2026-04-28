@@ -1,4 +1,4 @@
-name: Stable Notes App Builder
+name: ULTRA GOD MODE Stable Notes App Builder
 
 on:
   workflow_dispatch:
@@ -8,7 +8,6 @@ on:
         required: true
         default: "NoteForge"
         type: string
-
       package_name:
         description: "Android package name"
         required: true
@@ -20,7 +19,7 @@ permissions:
 
 jobs:
   build:
-    name: Generate Stable Kotlin Notes App
+    name: Build Stable Kotlin Notes App
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
@@ -35,7 +34,7 @@ jobs:
       - name: Install packages
         run: |
           sudo apt update
-          sudo apt install -y curl wget unzip zip git openjdk-17-jdk gradle
+          sudo apt install -y curl wget unzip zip git openjdk-17-jdk gradle python3
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -52,8 +51,8 @@ jobs:
           sudo rm -rf "$ANDROID_HOME/cmdline-tools/latest"
           sudo mv cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
 
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
           yes | sudo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
 
@@ -62,83 +61,97 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      - name: Generate complete Kotlin Notes app
+      - name: Generate stable Kotlin Notes app
+        env:
+          APP_NAME: ${{ github.event.inputs.app_name }}
+          PACKAGE_NAME: ${{ github.event.inputs.package_name }}
         run: |
-          APP_NAME="${{ github.event.inputs.app_name }}"
-          PACKAGE_NAME="${{ github.event.inputs.package_name }}"
-          PACKAGE_PATH="$(echo "$PACKAGE_NAME" | tr '.' '/')"
+          python3 <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
 
-          rm -rf app build.gradle.kts settings.gradle.kts gradle gradlew gradlew.bat
+          app_name = os.environ["APP_NAME"]
+          package_name = os.environ["PACKAGE_NAME"]
+          package_path = package_name.replace(".", "/")
 
-          mkdir -p app/src/main/java/$PACKAGE_PATH
-          mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/res/values-night
+          for path in ["app", "build.gradle.kts", "settings.gradle.kts", "gradle", "gradlew", "gradlew.bat"]:
+              p = Path(path)
+              if p.is_dir():
+                  shutil.rmtree(p)
+              elif p.exists():
+                  p.unlink()
 
-          cat > settings.gradle.kts <<EOF
-          pluginManagement {
-              repositories {
+          def write(path, content):
+              p = Path(path)
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(content.strip() + "\n")
+
+          write("settings.gradle.kts", f"""
+          pluginManagement {{
+              repositories {{
                   google()
                   mavenCentral()
                   gradlePluginPortal()
-              }
-          }
+              }}
+          }}
 
-          dependencyResolutionManagement {
+          dependencyResolutionManagement {{
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
+              repositories {{
                   google()
                   mavenCentral()
-              }
-          }
+              }}
+          }}
 
-          rootProject.name = "$APP_NAME"
+          rootProject.name = "{app_name}"
           include(":app")
-          EOF
+          """)
 
-          cat > build.gradle.kts <<'EOF'
+          write("build.gradle.kts", """
           plugins {
               id("com.android.application") version "8.5.2" apply false
               id("org.jetbrains.kotlin.android") version "1.9.24" apply false
           }
-          EOF
+          """)
 
-          cat > app/build.gradle.kts <<EOF
-          plugins {
+          write("app/build.gradle.kts", f"""
+          plugins {{
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
-          }
+          }}
 
-          android {
-              namespace = "$PACKAGE_NAME"
+          android {{
+              namespace = "{package_name}"
               compileSdk = 36
 
-              defaultConfig {
-                  applicationId = "$PACKAGE_NAME"
+              defaultConfig {{
+                  applicationId = "{package_name}"
                   minSdk = 26
                   targetSdk = 36
                   versionCode = 1
                   versionName = "1.0"
-              }
+              }}
 
-              buildFeatures {
+              buildFeatures {{
                   compose = true
-              }
+              }}
 
-              composeOptions {
+              composeOptions {{
                   kotlinCompilerExtensionVersion = "1.5.14"
-              }
+              }}
 
-              compileOptions {
+              compileOptions {{
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
-              }
+              }}
 
-              kotlinOptions {
+              kotlinOptions {{
                   jvmTarget = "17"
-              }
-          }
+              }}
+          }}
 
-          dependencies {
+          dependencies {{
               implementation("androidx.core:core-ktx:1.13.1")
               implementation("androidx.activity:activity-compose:1.9.2")
               implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
@@ -150,14 +163,14 @@ jobs:
               implementation("androidx.compose.material3:material3")
               implementation("androidx.compose.material:material-icons-extended")
               debugImplementation("androidx.compose.ui:ui-tooling")
-          }
-          EOF
+          }}
+          """)
 
-          cat > app/src/main/AndroidManifest.xml <<EOF
+          write("app/src/main/AndroidManifest.xml", f"""
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <application
                   android:allowBackup="true"
-                  android:label="$APP_NAME"
+                  android:label="{app_name}"
                   android:supportsRtl="true"
                   android:theme="@style/AppTheme">
                   <activity
@@ -170,22 +183,22 @@ jobs:
                   </activity>
               </application>
           </manifest>
-          EOF
+          """)
 
-          cat > app/src/main/res/values/styles.xml <<'EOF'
+          write("app/src/main/res/values/styles.xml", """
           <resources>
               <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar" />
           </resources>
-          EOF
+          """)
 
-          cat > app/src/main/res/values-night/styles.xml <<'EOF'
+          write("app/src/main/res/values-night/styles.xml", """
           <resources>
               <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar" />
           </resources>
-          EOF
+          """)
 
-          cat > app/src/main/java/$PACKAGE_PATH/MainActivity.kt <<EOF
-          package $PACKAGE_NAME
+          main_activity = '''
+          package __PACKAGE__
 
           import android.os.Bundle
           import androidx.activity.ComponentActivity
@@ -195,11 +208,24 @@ jobs:
           import androidx.compose.foundation.lazy.items
           import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material.icons.filled.Add
+          import androidx.compose.material.icons.filled.Archive
+          import androidx.compose.material.icons.filled.ContentCopy
+          import androidx.compose.material.icons.filled.Delete
+          import androidx.compose.material.icons.filled.DeleteForever
+          import androidx.compose.material.icons.filled.Home
+          import androidx.compose.material.icons.filled.NoteAlt
+          import androidx.compose.material.icons.filled.PushPin
+          import androidx.compose.material.icons.filled.Restore
+          import androidx.compose.material.icons.filled.Search
+          import androidx.compose.material.icons.filled.Settings
+          import androidx.compose.material.icons.filled.Star
+          import androidx.compose.material.icons.filled.StarBorder
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.unit.dp
           import androidx.lifecycle.ViewModel
@@ -213,7 +239,7 @@ jobs:
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   setContent {
-                      NoteForgeTheme {
+                      NotesTheme {
                           NotesApp()
                       }
                   }
@@ -230,15 +256,15 @@ jobs:
               val favorite: Boolean = false,
               val archived: Boolean = false,
               val trashed: Boolean = false,
-              val updatedAt: String = currentTime()
+              val updatedAt: String = now()
           )
 
-          fun currentTime(): String {
+          fun now(): String {
               return SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date())
           }
 
           enum class Screen {
-              HOME, EDITOR, TRASH, ARCHIVE, SETTINGS
+              HOME, EDITOR, ARCHIVE, TRASH, SETTINGS
           }
 
           class NotesViewModel : ViewModel() {
@@ -254,15 +280,15 @@ jobs:
               var notes by mutableStateOf(
                   listOf(
                       Note(
-                          title = "Welcome to $APP_NAME",
-                          body = "This is a production-ready offline notes app foundation built with Kotlin, Jetpack Compose, Material 3, and MVVM.",
+                          title = "Welcome to __APP_NAME__",
+                          body = "A stable production-style offline notes app built with Kotlin, Jetpack Compose, Material 3, and MVVM.",
                           folder = "Inbox",
                           tag = "Start",
                           pinned = true
                       ),
                       Note(
                           title = "Premium dashboard",
-                          body = "Use pinned notes, search, archive, trash, favorites, folders, and a clean editor.",
+                          body = "Create, edit, pin, favorite, archive, restore, duplicate, search, and delete notes.",
                           folder = "Productivity",
                           tag = "UI",
                           favorite = true
@@ -270,6 +296,27 @@ jobs:
                   )
               )
                   private set
+
+              val activeNotes: List<Note>
+                  get() = notes.filter { !it.trashed && !it.archived }
+
+              val filteredNotes: List<Note>
+                  get() {
+                      val base = when (screen) {
+                          Screen.TRASH -> notes.filter { it.trashed }
+                          Screen.ARCHIVE -> notes.filter { it.archived && !it.trashed }
+                          else -> activeNotes
+                      }
+
+                      if (query.isBlank()) return base
+
+                      return base.filter {
+                          it.title.contains(query, true) ||
+                              it.body.contains(query, true) ||
+                              it.folder.contains(query, true) ||
+                              it.tag.contains(query, true)
+                      }
+                  }
 
               fun navigate(target: Screen) {
                   screen = target
@@ -292,7 +339,6 @@ jobs:
               fun save(title: String, body: String, folder: String, tag: String) {
                   val cleanTitle = title.ifBlank { "Untitled Note" }
                   val cleanBody = body.ifBlank { "No content" }
-
                   val existing = selectedNote
 
                   notes = if (existing == null) {
@@ -312,7 +358,7 @@ jobs:
                                   body = cleanBody,
                                   folder = folder.ifBlank { "Personal" },
                                   tag = tag.ifBlank { "General" },
-                                  updatedAt = currentTime()
+                                  updatedAt = now()
                               )
                           } else {
                               it
@@ -326,36 +372,14 @@ jobs:
 
               fun togglePin(note: Note) {
                   notes = notes.map {
-                      if (it.id == note.id) it.copy(pinned = !it.pinned, updatedAt = currentTime()) else it
+                      if (it.id == note.id) it.copy(pinned = !it.pinned, updatedAt = now()) else it
                   }
               }
 
               fun toggleFavorite(note: Note) {
                   notes = notes.map {
-                      if (it.id == note.id) it.copy(favorite = !it.favorite, updatedAt = currentTime()) else it
+                      if (it.id == note.id) it.copy(favorite = !it.favorite, updatedAt = now()) else it
                   }
-              }
-
-              fun archive(note: Note) {
-                  notes = notes.map {
-                      if (it.id == note.id) it.copy(archived = true, trashed = false, updatedAt = currentTime()) else it
-                  }
-              }
-
-              fun restore(note: Note) {
-                  notes = notes.map {
-                      if (it.id == note.id) it.copy(archived = false, trashed = false, updatedAt = currentTime()) else it
-                  }
-              }
-
-              fun moveToTrash(note: Note) {
-                  notes = notes.map {
-                      if (it.id == note.id) it.copy(trashed = true, archived = false, updatedAt = currentTime()) else it
-                  }
-              }
-
-              fun deleteForever(note: Note) {
-                  notes = notes.filterNot { it.id == note.id }
               }
 
               fun duplicate(note: Note) {
@@ -363,41 +387,42 @@ jobs:
                       note.copy(
                           id = UUID.randomUUID().toString(),
                           title = note.title + " Copy",
-                          updatedAt = currentTime()
+                          updatedAt = now()
                       )
                   ) + notes
               }
 
-              val activeNotes: List<Note>
-                  get() = notes.filter { !it.trashed && !it.archived }
-
-              val filteredNotes: List<Note>
-                  get() {
-                      val base = when (screen) {
-                          Screen.TRASH -> notes.filter { it.trashed }
-                          Screen.ARCHIVE -> notes.filter { it.archived && !it.trashed }
-                          else -> activeNotes
-                      }
-
-                      if (query.isBlank()) return base
-
-                      return base.filter {
-                          it.title.contains(query, true) ||
-                          it.body.contains(query, true) ||
-                          it.folder.contains(query, true) ||
-                          it.tag.contains(query, true)
-                      }
+              fun archive(note: Note) {
+                  notes = notes.map {
+                      if (it.id == note.id) it.copy(archived = true, trashed = false, updatedAt = now()) else it
                   }
+              }
+
+              fun moveToTrash(note: Note) {
+                  notes = notes.map {
+                      if (it.id == note.id) it.copy(trashed = true, archived = false, updatedAt = now()) else it
+                  }
+              }
+
+              fun restore(note: Note) {
+                  notes = notes.map {
+                      if (it.id == note.id) it.copy(trashed = false, archived = false, updatedAt = now()) else it
+                  }
+              }
+
+              fun deleteForever(note: Note) {
+                  notes = notes.filterNot { it.id == note.id }
+              }
           }
 
           @Composable
-          fun NoteForgeTheme(content: @Composable () -> Unit) {
+          fun NotesTheme(content: @Composable () -> Unit) {
               MaterialTheme(
                   colorScheme = darkColorScheme(
-                      primary = androidx.compose.ui.graphics.Color(0xFF8EA7FF),
-                      secondary = androidx.compose.ui.graphics.Color(0xFFB8C7FF),
-                      background = androidx.compose.ui.graphics.Color(0xFF10131A),
-                      surface = androidx.compose.ui.graphics.Color(0xFF181C25)
+                      primary = Color(0xFF8EA7FF),
+                      secondary = Color(0xFFB8C7FF),
+                      background = Color(0xFF10131A),
+                      surface = Color(0xFF181C25)
                   ),
                   content = content
               )
@@ -411,9 +436,9 @@ jobs:
                       TopAppBar(
                           title = {
                               Column {
-                                  Text("$APP_NAME", fontWeight = FontWeight.Bold)
+                                  Text("__APP_NAME__", fontWeight = FontWeight.Bold)
                                   Text(
-                                      text = "${'$'}{vm.activeNotes.size} active notes",
+                                      text = "${vm.activeNotes.size} active notes",
                                       style = MaterialTheme.typography.labelMedium
                                   )
                               }
@@ -459,8 +484,8 @@ jobs:
                       when (vm.screen) {
                           Screen.HOME -> HomeScreen(vm)
                           Screen.EDITOR -> EditorScreen(vm)
-                          Screen.TRASH -> NotesListScreen(vm, title = "Trash")
-                          Screen.ARCHIVE -> NotesListScreen(vm, title = "Archive")
+                          Screen.ARCHIVE -> NotesListScreen(vm, "Archive")
+                          Screen.TRASH -> NotesListScreen(vm, "Trash")
                           Screen.SETTINGS -> SettingsScreen(vm)
                       }
                   }
@@ -504,10 +529,7 @@ jobs:
 
           @Composable
           fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
-              Card(
-                  modifier = modifier,
-                  shape = RoundedCornerShape(22.dp)
-              ) {
+              Card(modifier = modifier, shape = RoundedCornerShape(22.dp)) {
                   Column(modifier = Modifier.padding(16.dp)) {
                       Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                       Text(label, style = MaterialTheme.typography.labelLarge)
@@ -568,7 +590,7 @@ jobs:
 
                       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                           AssistChip(onClick = {}, label = { Text(note.folder) })
-                          AssistChip(onClick = {}, label = { Text("#${'$'}{note.tag}") })
+                          AssistChip(onClick = {}, label = { Text("#${note.tag}") })
                       }
 
                       Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -689,7 +711,7 @@ jobs:
                           verticalArrangement = Arrangement.spacedBy(10.dp)
                       ) {
                           Text("Offline-first", fontWeight = FontWeight.Bold)
-                          Text("This version stores notes in memory. It is stable, fast, and build-ready.")
+                          Text("This stable version keeps notes in memory and requires no backend or API key.")
                       }
                   }
 
@@ -725,7 +747,10 @@ jobs:
                   }
               }
           }
-          EOF
+          '''.replace("__PACKAGE__", package_name).replace("__APP_NAME__", app_name)
+
+          write(f"app/src/main/java/{package_path}/MainActivity.kt", main_activity)
+          PY
 
       - name: Create Gradle wrapper
         run: |
