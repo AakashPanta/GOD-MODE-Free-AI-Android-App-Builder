@@ -1,0 +1,127 @@
+name: Fix Kotlin Build Errors
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-kotlin:
+    name: Fix Kotlin Syntax and Validate Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      ANDROID_SDK_ROOT: /opt/android-sdk
+      ANDROID_USER_HOME: /home/runner/.android
+      GRADLE_USER_HOME: /home/runner/.gradle
+      JAVA_TOOL_OPTIONS: -Duser.home=/home/runner
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare environment
+        shell: bash
+        run: |
+          set -e
+          mkdir -p "$ANDROID_USER_HOME" "$GRADLE_USER_HOME" build-logs
+          chmod -R 777 "$ANDROID_USER_HOME" "$GRADLE_USER_HOME"
+
+      - name: Install required packages
+        shell: bash
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y curl wget unzip zip git openjdk-17-jdk gradle python3
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          set -e
+          sudo mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd /tmp
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip
+          sudo rm -rf "$ANDROID_HOME/cmdline-tools/latest"
+          sudo mv cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          yes | sudo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          sudo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Rewrite Kotlin files
+        shell: bash
+        run: |
+          set -e
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import re
+
+          vm = Path("app/src/main/java/com/notes/app/NotesViewModel.kt")
+          if vm.exists():
+              text = vm.read_text()
+              text = re.sub(
+                  r'it\.body\.split\(Regex\([^)]+\)\)\.filter',
+                  'it.body.split(Regex("""\\\\s+""")).filter',
+                  text
+              )
+              vm.write_text(text)
+
+          editor = Path("app/src/main/java/com/notes/app/ui/screens/EditorScreen.kt")
+          editor.parent.mkdir(parents=True, exist_ok=True)
+          editor.write_text(base64.b64decode("cGFja2FnZSBjb20ubm90ZXMuYXBwLnVpLnNjcmVlbnMKCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLmZvdW5kYXRpb24ubGF5b3V0LkFycmFuZ2VtZW50CmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLmZvdW5kYXRpb24ubGF5b3V0LkNvbHVtbgppbXBvcnQgYW5kcm9pZHguY29tcG9zZS5mb3VuZGF0aW9uLmxheW91dC5Sb3cKaW1wb3J0IGFuZHJvaWR4LmNvbXBvc2UuZm91bmRhdGlvbi5sYXlvdXQuZmlsbE1heFNpemUKaW1wb3J0IGFuZHJvaWR4LmNvbXBvc2UuZm91bmRhdGlvbi5sYXlvdXQuZmlsbE1heFdpZHRoCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLmZvdW5kYXRpb24ubGF5b3V0LmhlaWdodEluCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLmZvdW5kYXRpb24ubGF5b3V0LnBhZGRpbmcKaW1wb3J0IGFuZHJvaWR4LmNvbXBvc2UuZm91bmRhdGlvbi5yZW1lbWJlclNjcm9sbFN0YXRlCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLmZvdW5kYXRpb24udmVydGljYWxTY3JvbGwKaW1wb3J0IGFuZHJvaWR4LmNvbXBvc2UubWF0ZXJpYWwuaWNvbnMuSWNvbnMKaW1wb3J0IGFuZHJvaWR4LmNvbXBvc2UubWF0ZXJpYWwuaWNvbnMuZmlsbGVkLkNoZWNrCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLm1hdGVyaWFsLmljb25zLmZpbGxlZC5DbG9zZQppbXBvcnQgYW5kcm9pZHguY29tcG9zZS5tYXRlcmlhbDMuQXNzaXN0Q2hpcAppbXBvcnQgYW5kcm9pZHguY29tcG9zZS5tYXRlcmlhbDMuRWxldmF0ZWRDYXJkCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLm1hdGVyaWFsMy5GaWx0ZXJDaGlwCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLm1hdGVyaWFsMy5GaWxsZWRJY29uQnV0dG9uCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLm1hdGVyaWFsMy5JY29uCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLm1hdGVyaWFsMy5JY29uQnV0dG9uCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLm1hdGVyaWFsMy5NYXRlcmlhbFRoZW1lCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLm1hdGVyaWFsMy5PdXRsaW5lZFRleHRGaWVsZAppbXBvcnQgYW5kcm9pZHguY29tcG9zZS5tYXRlcmlhbDMuVGV4dAppbXBvcnQgYW5kcm9pZHguY29tcG9zZS5ydW50aW1lLkNvbXBvc2FibGUKaW1wb3J0IGFuZHJvaWR4LmNvbXBvc2UucnVudGltZS5nZXRWYWx1ZQppbXBvcnQgYW5kcm9pZHguY29tcG9zZS5ydW50aW1lLm11dGFibGVTdGF0ZU9mCmltcG9ydCBhbmRyb2lkeC5jb21wb3NlLnJ1bnRpbWUucmVtZW1iZXIKaW1wb3J0IGFuZHJvaWR4LmNvbXBvc2UucnVudGltZS5zZXRWYWx1ZQppbXBvcnQgYW5kcm9pZHguY29tcG9zZS51aS5Nb2RpZmllcgppbXBvcnQgYW5kcm9pZHguY29tcG9zZS51aS50ZXh0LmZvbnQuRm9udFdlaWdodAppbXBvcnQgYW5kcm9pZHguY29tcG9zZS51aS51bml0LmRwCmltcG9ydCBjb20ubm90ZXMuYXBwLk5vdGVzVmlld01vZGVsCgpAQ29tcG9zYWJsZQpmdW4gRWRpdG9yU2NyZWVuKHZtOiBOb3Rlc1ZpZXdNb2RlbCkgewogICAgdmFsIGVkaXRpbmcgPSB2bS5zZWxlY3RlZE5vdGUKCiAgICB2YXIgdGl0bGUgYnkgcmVtZW1iZXIoZWRpdGluZz8uaWQpIHsgbXV0YWJsZVN0YXRlT2YoZWRpdGluZz8udGl0bGUgPzogIiIpIH0KICAgIHZhciBib2R5IGJ5IHJlbWVtYmVyKGVkaXRpbmc/LmlkKSB7IG11dGFibGVTdGF0ZU9mKGVkaXRpbmc/LmJvZHkgPzogIiIpIH0KICAgIHZhciBsYWJlbCBieSByZW1lbWJlcihlZGl0aW5nPy5pZCkgeyBtdXRhYmxlU3RhdGVPZihlZGl0aW5nPy5sYWJlbCA/OiAiUGVyc29uYWwiKSB9CiAgICB2YXIgdGFncyBieSByZW1lbWJlcihlZGl0aW5nPy5pZCkgeyBtdXRhYmxlU3RhdGVPZihlZGl0aW5nPy50YWdzID86ICJHZW5lcmFsIikgfQogICAgdmFyIGNvbG9yIGJ5IHJlbWVtYmVyKGVkaXRpbmc/LmlkKSB7IG11dGFibGVTdGF0ZU9mKGVkaXRpbmc/LmNvbG9yID86IDB4RkY4RUE3RkYpIH0KICAgIHZhciBsb2NrZWQgYnkgcmVtZW1iZXIoZWRpdGluZz8uaWQpIHsgbXV0YWJsZVN0YXRlT2YoZWRpdGluZz8ubG9ja2VkID86IGZhbHNlKSB9CiAgICB2YXIgZmF2b3JpdGUgYnkgcmVtZW1iZXIoZWRpdGluZz8uaWQpIHsgbXV0YWJsZVN0YXRlT2YoZWRpdGluZz8uZmF2b3JpdGUgPzogZmFsc2UpIH0KICAgIHZhciBwaW5uZWQgYnkgcmVtZW1iZXIoZWRpdGluZz8uaWQpIHsgbXV0YWJsZVN0YXRlT2YoZWRpdGluZz8ucGlubmVkID86IGZhbHNlKSB9CiAgICB2YXIgcHJldmlldyBieSByZW1lbWJlciB7IG11dGFibGVTdGF0ZU9mKGZhbHNlKSB9CgogICAgdmFsIGhhc1Vuc2F2ZWRDaGFuZ2VzID0gZWRpdGluZyA9PSBudWxsIHx8CiAgICAgICAgdGl0bGUgIT0gZWRpdGluZy50aXRsZSB8fAogICAgICAgIGJvZHkgIT0gZWRpdGluZy5ib2R5IHx8CiAgICAgICAgbGFiZWwgIT0gZWRpdGluZy5sYWJlbCB8fAogICAgICAgIHRhZ3MgIT0gZWRpdGluZy50YWdzIHx8CiAgICAgICAgY29sb3IgIT0gZWRpdGluZy5jb2xvciB8fAogICAgICAgIGxvY2tlZCAhPSBlZGl0aW5nLmxvY2tlZCB8fAogICAgICAgIGZhdm9yaXRlICE9IGVkaXRpbmcuZmF2b3JpdGUgfHwKICAgICAgICBwaW5uZWQgIT0gZWRpdGluZy5waW5uZWQKCiAgICBmdW4gaW5zZXJ0TWFya2Rvd24odG9rZW46IFN0cmluZykgewogICAgICAgIGJvZHkgPSBpZiAoYm9keS5pc0JsYW5rKCkpIHRva2VuIGVsc2UgYm9keSArICJcbiIgKyB0b2tlbgogICAgfQoKICAgIENvbHVtbigKICAgICAgICBtb2RpZmllciA9IE1vZGlmaWVyCiAgICAgICAgICAgIC5maWxsTWF4U2l6ZSgpCiAgICAgICAgICAgIC52ZXJ0aWNhbFNjcm9sbChyZW1lbWJlclNjcm9sbFN0YXRlKCkpCiAgICAgICAgICAgIC5wYWRkaW5nKDE4LmRwKQogICAgICAgICAgICAucGFkZGluZyhib3R0b20gPSAxMjAuZHApLAogICAgICAgIHZlcnRpY2FsQXJyYW5nZW1lbnQgPSBBcnJhbmdlbWVudC5zcGFjZWRCeSgxNC5kcCkKICAgICkgewogICAgICAgIFJvdygKICAgICAgICAgICAgbW9kaWZpZXIgPSBNb2RpZmllci5maWxsTWF4V2lkdGgoKSwKICAgICAgICAgICAgaG9yaXpvbnRhbEFycmFuZ2VtZW50ID0gQXJyYW5nZW1lbnQuU3BhY2VCZXR3ZWVuCiAgICAgICAgKSB7CiAgICAgICAgICAgIENvbHVtbiB7CiAgICAgICAgICAgICAgICBUZXh0KAogICAgICAgICAgICAgICAgICAgIHRleHQgPSBpZiAoZWRpdGluZyA9PSBudWxsKSAiTmV3IE5vdGUiIGVsc2UgIkVkaXQgTm90ZSIsCiAgICAgICAgICAgICAgICAgICAgc3R5bGUgPSBNYXRlcmlhbFRoZW1lLnR5cG9ncmFwaHkuaGVhZGxpbmVNZWRpdW0sCiAgICAgICAgICAgICAgICAgICAgZm9udFdlaWdodCA9IEZvbnRXZWlnaHQuQm9sZAogICAgICAgICAgICAgICAgKQoKICAgICAgICAgICAgICAgIFRleHQoCiAgICAgICAgICAgICAgICAgICAgdGV4dCA9IGlmIChoYXNVbnNhdmVkQ2hhbmdlcykgIlVuc2F2ZWQgY2hhbmdlcyIgZWxzZSAiU2F2ZWQiLAogICAgICAgICAgICAgICAgICAgIHN0eWxlID0gTWF0ZXJpYWxUaGVtZS50eXBvZ3JhcGh5LmxhYmVsTGFyZ2UsCiAgICAgICAgICAgICAgICAgICAgY29sb3IgPSBNYXRlcmlhbFRoZW1lLmNvbG9yU2NoZW1lLm9uU3VyZmFjZVZhcmlhbnQKICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgfQoKICAgICAgICAgICAgUm93IHsKICAgICAgICAgICAgICAgIEljb25CdXR0b24ob25DbGljayA9IHsgdm0uY2FuY2VsRWRpdCgpIH0pIHsKICAgICAgICAgICAgICAgICAgICBJY29uKEljb25zLkRlZmF1bHQuQ2xvc2UsIGNvbnRlbnREZXNjcmlwdGlvbiA9ICJDYW5jZWwiKQogICAgICAgICAgICAgICAgfQoKICAgICAgICAgICAgICAgIEZpbGxlZEljb25CdXR0b24oCiAgICAgICAgICAgICAgICAgICAgb25DbGljayA9IHsKICAgICAgICAgICAgICAgICAgICAgICAgdm0uc2F2ZSgKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRpdGxlID0gdGl0bGUsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBib2R5ID0gYm9keSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGxhYmVsID0gbGFiZWwsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICB0YWdzID0gdGFncywKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGNvbG9yID0gY29sb3IsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBsb2NrZWQgPSBsb2NrZWQsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBmYXZvcml0ZSA9IGZhdm9yaXRlLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgcGlubmVkID0gcGlubmVkCiAgICAgICAgICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICApIHsKICAgICAgICAgICAgICAgICAgICBJY29uKEljb25zLkRlZmF1bHQuQ2hlY2ssIGNvbnRlbnREZXNjcmlwdGlvbiA9ICJTYXZlIikKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgUm93KGhvcml6b250YWxBcnJhbmdlbWVudCA9IEFycmFuZ2VtZW50LnNwYWNlZEJ5KDguZHApKSB7CiAgICAgICAgICAgIEZpbHRlckNoaXAoc2VsZWN0ZWQgPSAhcHJldmlldywgb25DbGljayA9IHsgcHJldmlldyA9IGZhbHNlIH0sIGxhYmVsID0geyBUZXh0KCJXcml0ZSIpIH0pCiAgICAgICAgICAgIEZpbHRlckNoaXAoc2VsZWN0ZWQgPSBwcmV2aWV3LCBvbkNsaWNrID0geyBwcmV2aWV3ID0gdHJ1ZSB9LCBsYWJlbCA9IHsgVGV4dCgiUHJldmlldyIpIH0pCiAgICAgICAgfQoKICAgICAgICBSb3coaG9yaXpvbnRhbEFycmFuZ2VtZW50ID0gQXJyYW5nZW1lbnQuc3BhY2VkQnkoOC5kcCkpIHsKICAgICAgICAgICAgQXNzaXN0Q2hpcChvbkNsaWNrID0geyBpbnNlcnRNYXJrZG93bigiKipib2xkIHRleHQqKiIpIH0sIGxhYmVsID0geyBUZXh0KCJCb2xkIikgfSkKICAgICAgICAgICAgQXNzaXN0Q2hpcChvbkNsaWNrID0geyBpbnNlcnRNYXJrZG93bigiX2l0YWxpYyB0ZXh0XyIpIH0sIGxhYmVsID0geyBUZXh0KCJJdGFsaWMiKSB9KQogICAgICAgICAgICBBc3Npc3RDaGlwKG9uQ2xpY2sgPSB7IGluc2VydE1hcmtkb3duKCIjIEhlYWRpbmciKSB9LCBsYWJlbCA9IHsgVGV4dCgiSGVhZGluZyIpIH0pCiAgICAgICAgICAgIEFzc2lzdENoaXAob25DbGljayA9IHsgaW5zZXJ0TWFya2Rvd24oIj4gUXVvdGUiKSB9LCBsYWJlbCA9IHsgVGV4dCgiUXVvdGUiKSB9KQogICAgICAgIH0KCiAgICAgICAgUm93KGhvcml6b250YWxBcnJhbmdlbWVudCA9IEFycmFuZ2VtZW50LnNwYWNlZEJ5KDguZHApKSB7CiAgICAgICAgICAgIEFzc2lzdENoaXAob25DbGljayA9IHsgaW5zZXJ0TWFya2Rvd24oIi0gQnVsbGV0IGl0ZW0iKSB9LCBsYWJlbCA9IHsgVGV4dCgiQnVsbGV0IikgfSkKICAgICAgICAgICAgQXNzaXN0Q2hpcChvbkNsaWNrID0geyBpbnNlcnRNYXJrZG93bigiMS4gTnVtYmVyZWQgaXRlbSIpIH0sIGxhYmVsID0geyBUZXh0KCJOdW1iZXIiKSB9KQogICAgICAgICAgICBBc3Npc3RDaGlwKG9uQ2xpY2sgPSB7IGluc2VydE1hcmtkb3duKCJbTGlua10oaHR0cHM6Ly9leGFtcGxlLmNvbSkiKSB9LCBsYWJlbCA9IHsgVGV4dCgiTGluayIpIH0pCiAgICAgICAgICAgIEFzc2lzdENoaXAob25DbGljayA9IHsgaW5zZXJ0TWFya2Rvd24oIi0gWyBdIENoZWNrbGlzdCBpdGVtIikgfSwgbGFiZWwgPSB7IFRleHQoIkNoZWNrbGlzdCIpIH0pCiAgICAgICAgfQoKICAgICAgICBPdXRsaW5lZFRleHRGaWVsZCgKICAgICAgICAgICAgdmFsdWUgPSB0aXRsZSwKICAgICAgICAgICAgb25WYWx1ZUNoYW5nZSA9IHsgdGl0bGUgPSBpdCB9LAogICAgICAgICAgICBtb2RpZmllciA9IE1vZGlmaWVyLmZpbGxNYXhXaWR0aCgpLAogICAgICAgICAgICBsYWJlbCA9IHsgVGV4dCgiVGl0bGUiKSB9LAogICAgICAgICAgICBzaW5nbGVMaW5lID0gdHJ1ZSwKICAgICAgICAgICAgc2hhcGUgPSBNYXRlcmlhbFRoZW1lLnNoYXBlcy5leHRyYUxhcmdlCiAgICAgICAgKQoKICAgICAgICBSb3coaG9yaXpvbnRhbEFycmFuZ2VtZW50ID0gQXJyYW5nZW1lbnQuc3BhY2VkQnkoMTIuZHApKSB7CiAgICAgICAgICAgIE91dGxpbmVkVGV4dEZpZWxkKAogICAgICAgICAgICAgICAgdmFsdWUgPSBsYWJlbCwKICAgICAgICAgICAgICAgIG9uVmFsdWVDaGFuZ2UgPSB7IGxhYmVsID0gaXQgfSwKICAgICAgICAgICAgICAgIG1vZGlmaWVyID0gTW9kaWZpZXIud2VpZ2h0KDFmKSwKICAgICAgICAgICAgICAgIGxhYmVsID0geyBUZXh0KCJMYWJlbCIpIH0sCiAgICAgICAgICAgICAgICBzaW5nbGVMaW5lID0gdHJ1ZSwKICAgICAgICAgICAgICAgIHNoYXBlID0gTWF0ZXJpYWxUaGVtZS5zaGFwZXMuZXh0cmFMYXJnZQogICAgICAgICAgICApCgogICAgICAgICAgICBPdXRsaW5lZFRleHRGaWVsZCgKICAgICAgICAgICAgICAgIHZhbHVlID0gdGFncywKICAgICAgICAgICAgICAgIG9uVmFsdWVDaGFuZ2UgPSB7IHRhZ3MgPSBpdCB9LAogICAgICAgICAgICAgICAgbW9kaWZpZXIgPSBNb2RpZmllci53ZWlnaHQoMWYpLAogICAgICAgICAgICAgICAgbGFiZWwgPSB7IFRleHQoIlRhZ3MiKSB9LAogICAgICAgICAgICAgICAgc2luZ2xlTGluZSA9IHRydWUsCiAgICAgICAgICAgICAgICBzaGFwZSA9IE1hdGVyaWFsVGhlbWUuc2hhcGVzLmV4dHJhTGFyZ2UKICAgICAgICAgICAgKQogICAgICAgIH0KCiAgICAgICAgUm93KGhvcml6b250YWxBcnJhbmdlbWVudCA9IEFycmFuZ2VtZW50LnNwYWNlZEJ5KDEwLmRwKSkgewogICAgICAgICAgICBGaWx0ZXJDaGlwKHNlbGVjdGVkID0gZmF2b3JpdGUsIG9uQ2xpY2sgPSB7IGZhdm9yaXRlID0gIWZhdm9yaXRlIH0sIGxhYmVsID0geyBUZXh0KCJGYXZvcml0ZSIpIH0pCiAgICAgICAgICAgIEZpbHRlckNoaXAoc2VsZWN0ZWQgPSBwaW5uZWQsIG9uQ2xpY2sgPSB7IHBpbm5lZCA9ICFwaW5uZWQgfSwgbGFiZWwgPSB7IFRleHQoIlBpbm5lZCIpIH0pCiAgICAgICAgICAgIEZpbHRlckNoaXAoc2VsZWN0ZWQgPSBsb2NrZWQsIG9uQ2xpY2sgPSB7IGxvY2tlZCA9ICFsb2NrZWQgfSwgbGFiZWwgPSB7IFRleHQoIkxvY2tlZCIpIH0pCiAgICAgICAgfQoKICAgICAgICBpZiAocHJldmlldykgewogICAgICAgICAgICBNYXJrZG93blByZXZpZXcoY29udGVudCA9IGJvZHkpCiAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgT3V0bGluZWRUZXh0RmllbGQoCiAgICAgICAgICAgICAgICB2YWx1ZSA9IGJvZHksCiAgICAgICAgICAgICAgICBvblZhbHVlQ2hhbmdlID0geyBib2R5ID0gaXQgfSwKICAgICAgICAgICAgICAgIG1vZGlmaWVyID0gTW9kaWZpZXIKICAgICAgICAgICAgICAgICAgICAuZmlsbE1heFdpZHRoKCkKICAgICAgICAgICAgICAgICAgICAuaGVpZ2h0SW4obWluID0gMzIwLmRwKSwKICAgICAgICAgICAgICAgIGxhYmVsID0geyBUZXh0KCJXcml0ZSB5b3VyIG5vdGUiKSB9LAogICAgICAgICAgICAgICAgc2hhcGUgPSBNYXRlcmlhbFRoZW1lLnNoYXBlcy5leHRyYUxhcmdlLAogICAgICAgICAgICAgICAgdGV4dFN0eWxlID0gTWF0ZXJpYWxUaGVtZS50eXBvZ3JhcGh5LmJvZHlMYXJnZQogICAgICAgICAgICApCiAgICAgICAgfQogICAgfQp9CgpAQ29tcG9zYWJsZQpmdW4gTWFya2Rvd25QcmV2aWV3KGNvbnRlbnQ6IFN0cmluZykgewogICAgRWxldmF0ZWRDYXJkKAogICAgICAgIG1vZGlmaWVyID0gTW9kaWZpZXIuZmlsbE1heFdpZHRoKCksCiAgICAgICAgc2hhcGUgPSBNYXRlcmlhbFRoZW1lLnNoYXBlcy5leHRyYUxhcmdlCiAgICApIHsKICAgICAgICBDb2x1bW4oCiAgICAgICAgICAgIG1vZGlmaWVyID0gTW9kaWZpZXIucGFkZGluZygxOC5kcCksCiAgICAgICAgICAgIHZlcnRpY2FsQXJyYW5nZW1lbnQgPSBBcnJhbmdlbWVudC5zcGFjZWRCeSgxMC5kcCkKICAgICAgICApIHsKICAgICAgICAgICAgaWYgKGNvbnRlbnQuaXNCbGFuaygpKSB7CiAgICAgICAgICAgICAgICBUZXh0KAogICAgICAgICAgICAgICAgICAgIHRleHQgPSAiUHJldmlldyBpcyBlbXB0eSIsCiAgICAgICAgICAgICAgICAgICAgY29sb3IgPSBNYXRlcmlhbFRoZW1lLmNvbG9yU2NoZW1lLm9uU3VyZmFjZVZhcmlhbnQKICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgICAgIGNvbnRlbnQubGluZXMoKS5mb3JFYWNoIHsgbGluZSAtPgogICAgICAgICAgICAgICAgICAgIHdoZW4gewogICAgICAgICAgICAgICAgICAgICAgICBsaW5lLnN0YXJ0c1dpdGgoIiMgIikgLT4gVGV4dCgKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRleHQgPSBsaW5lLnJlbW92ZVByZWZpeCgiIyAiKSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHN0eWxlID0gTWF0ZXJpYWxUaGVtZS50eXBvZ3JhcGh5LmhlYWRsaW5lU21hbGwsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBmb250V2VpZ2h0ID0gRm9udFdlaWdodC5Cb2xkCiAgICAgICAgICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgICAgICAgICAgbGluZS5zdGFydHNXaXRoKCI+ICIpIC0+IFRleHQoCiAgICAgICAgICAgICAgICAgICAgICAgICAgICB0ZXh0ID0gbGluZS5yZW1vdmVQcmVmaXgoIj4gIiksCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBjb2xvciA9IE1hdGVyaWFsVGhlbWUuY29sb3JTY2hlbWUucHJpbWFyeQogICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgICAgIGxpbmUuc3RhcnRzV2l0aCgiLSBbIF0iKSAtPiBUZXh0KHRleHQgPSAi4piQICIgKyBsaW5lLnJlbW92ZVByZWZpeCgiLSBbIF0iKS50cmltKCkpCiAgICAgICAgICAgICAgICAgICAgICAgIGxpbmUuc3RhcnRzV2l0aCgiLSAiKSAtPiBUZXh0KHRleHQgPSAi4oCiICIgKyBsaW5lLnJlbW92ZVByZWZpeCgiLSAiKSkKICAgICAgICAgICAgICAgICAgICAgICAgbGluZS5tYXRjaGVzKFJlZ2V4KCIiIl5cZCtcLiAuKiIiIikpIC0+IFRleHQodGV4dCA9IGxpbmUpCiAgICAgICAgICAgICAgICAgICAgICAgIGVsc2UgLT4gVGV4dCgKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHRleHQgPSBsaW5lCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLnJlcGxhY2UoIioqIiwgIiIpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLnJlcGxhY2UoIl8iLCAiIikKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAucmVwbGFjZSgiPT0iLCAiIikKICAgICAgICAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgfQogICAgICAgIH0KICAgIH0KfQo=").decode())
+          print("Kotlin files rewritten successfully.")
+          PY
+
+      - name: Ensure Gradle wrapper
+        shell: bash
+        run: |
+          set -e
+          if [ ! -f ./gradlew ]; then
+            gradle wrapper --gradle-version 8.7
+          fi
+          chmod +x ./gradlew
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew clean assembleDebug --stacktrace --info 2>&1 | tee build-logs/fix-kotlin-debug-build.log
+
+      - name: Commit Kotlin build fix
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          git config user.name "Kotlin Build Fix Bot"
+          git config user.email "actions@github.com"
+          git add .
+          git commit -m "Fix Kotlin compile errors in Notes V4 MVP" || echo "No changes to commit"
+          git push || echo "Push skipped"
+
+      - name: Upload fix build logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fix-kotlin-build-logs
+          path: |
+            build-logs/
+            **/build/reports/
+            **/outputs/logs/
+
+      - name: Upload verified debug APK
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: notes-v4-mvp-fixed-debug-apk
+          path: |
+            **/build/outputs/apk/debug/*.apk
