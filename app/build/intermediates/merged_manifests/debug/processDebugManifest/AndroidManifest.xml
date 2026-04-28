@@ -6,7 +6,7 @@
 
     <uses-sdk
         android:minSdkVersion="26"
-        android:targetSdkVersion="36" />
+        android:targetSdkVersion="34" />
 
     <permission
         android:name="com.notes.app.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
