@@ -1,0 +1,89 @@
+name: Fix Production Pipeline (Keystore + Signing)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fix pipeline and Gradle signing configuration
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          # ---------------------------
+          # Fix app/build.gradle.kts
+          # ---------------------------
+          gradle_file = Path("app/build.gradle.kts")
+          if gradle_file.exists():
+              text = gradle_file.read_text()
+
+              # Replace any storeFile usage with correct static path
+              text = re.sub(
+                  r'storeFile\s*=\s*file\([^)]+\)',
+                  'storeFile = file("signing/notes-release.jks")',
+                  text
+              )
+
+              # Replace env-based configs with static ones
+              text = re.sub(r'storePassword\s*=.*', 'storePassword = "notespassword"', text)
+              text = re.sub(r'keyAlias\s*=.*', 'keyAlias = "noteskey"', text)
+              text = re.sub(r'keyPassword\s*=.*', 'keyPassword = "notespassword"', text)
+
+              gradle_file.write_text(text)
+              print("Gradle signing config fixed")
+
+          # ---------------------------
+          # Fix production pipeline
+          # ---------------------------
+          workflow = Path(".github/workflows/notes-production-pipeline.yml")
+
+          if workflow.exists():
+              text = workflow.read_text()
+
+              # Fix keystore path everywhere
+              text = text.replace(
+                  'KEYSTORE_PATH="signing/notes-release.jks"',
+                  'KEYSTORE_PATH="app/signing/notes-release.jks"\n          mkdir -p app/signing'
+              )
+
+              text = text.replace(
+                  "SIGNING_KEYSTORE_PATH: signing/notes-release.jks",
+                  "SIGNING_KEYSTORE_PATH: app/signing/notes-release.jks"
+              )
+
+              text = text.replace(
+                  "signing/notes-release.jks",
+                  "app/signing/notes-release.jks"
+              )
+
+              # Remove System.getenv usage (very important)
+              text = re.sub(r'System\.getenv\([^)]+\)', '"notespassword"', text)
+
+              workflow.write_text(text)
+              print("Workflow fixed")
+
+          PY
+
+      - name: Ensure signing directory exists
+        run: |
+          mkdir -p app/signing
+          touch app/signing/.gitkeep
+
+      - name: Commit fixes
+        run: |
+          git config user.name "Pipeline Fix Bot"
+          git config user.email "actions@github.com"
+
+          git add .
+          git commit -m "Fix keystore path + remove env signing + stabilize pipeline" || echo "No changes"
+          git push || echo "Push skipped"
