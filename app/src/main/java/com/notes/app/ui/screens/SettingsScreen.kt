@@ -2,6 +2,10 @@ package com.notes.app.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -20,43 +24,53 @@ fun SettingsScreen(vm: NotesViewModel) {
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
 
-        Card(shape = RoundedCornerShape(24.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text("Dark Theme", fontWeight = FontWeight.Bold)
-                    Text("Switch between premium dark and light modes.")
-                }
+        SettingsCard(
+            icon = Icons.Default.Style,
+            title = "Appearance",
+            body = "Switch between premium dark and light modes.",
+            trailing = {
                 Switch(checked = vm.darkTheme, onCheckedChange = { vm.toggleTheme() })
             }
-        }
+        )
 
-        Card(shape = RoundedCornerShape(24.dp)) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text("Offline-first", fontWeight = FontWeight.Bold)
-                Text("Notes are saved permanently using local JSON storage.")
-            }
-        }
+        SettingsCard(
+            icon = Icons.Default.Storage,
+            title = "Offline-first",
+            body = "Notes are saved permanently using local JSON storage."
+        )
 
-        Card(shape = RoundedCornerShape(24.dp)) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text("Production Structure", fontWeight = FontWeight.Bold)
-                Text("Model, storage, ViewModel, screens, and theme are split into separate files.")
-            }
-        }
+        SettingsCard(
+            icon = Icons.Default.Info,
+            title = "Notes V2",
+            body = "Premium UI, production structure, favorites, folders, archive, trash, and signed builds."
+        )
 
         Button(onClick = { vm.navigate(Screen.HOME) }, modifier = Modifier.fillMaxWidth()) {
             Text("Back Home")
+        }
+    }
+}
+
+@Composable
+fun SettingsCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    body: String,
+    trailing: @Composable (() -> Unit)? = null
+) {
+    Card(shape = RoundedCornerShape(28.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Icon(icon, contentDescription = null)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.Bold)
+                Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (trailing != null) trailing()
         }
     }
 }

@@ -20,24 +20,38 @@ fun OnboardingScreen(vm: NotesViewModel) {
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
-        Card(shape = RoundedCornerShape(32.dp)) {
+        ElevatedCard(shape = RoundedCornerShape(36.dp)) {
             Column(
-                modifier = Modifier.padding(28.dp),
+                modifier = Modifier.padding(30.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                Icon(Icons.Default.NoteAlt, contentDescription = null, modifier = Modifier.size(72.dp))
+                Surface(
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Icon(
+                        Icons.Default.NoteAlt,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .padding(20.dp)
+                            .size(64.dp)
+                    )
+                }
 
-                Text("Notes", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                Text("Notes V2", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
 
                 Text(
-                    "A fast offline notes app with folders, pinned notes, favorites, archive, trash, theme support, and persistent storage.",
+                    "A polished offline notes workspace with folders, favorites, pinned notes, archive, trash, premium themes, and persistent storage.",
                     style = MaterialTheme.typography.bodyLarge
                 )
 
                 Button(
                     onClick = { vm.finishOnboarding() },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = MaterialTheme.shapes.extraLarge
                 ) {
                     Text("Start Writing")
                 }

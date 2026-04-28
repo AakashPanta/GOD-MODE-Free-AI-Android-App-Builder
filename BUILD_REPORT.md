@@ -1,16 +1,21 @@
-# Notes Production Build Report
+# Notes V2 Build Report
 
 App Name: Notes
 Package Name: com.notes.app
-Version Code: 1
-Version Name: 1.0.0
+Version Code: 2
+Version Name: 2.0.0
+
+## V2 Upgrades
+- Premium dashboard
+- Large top app bar
+- Extended FAB
+- Improved note cards
+- Improved editor
+- Premium settings screen
+- Better onboarding
+- Improved dark/light color system
 
 ## Outputs
 - Debug APK
 - Signed Release APK
 - Signed Release AAB
-- Build logs
-- Release keystore backup
-
-## Important
-Save the release keystore artifact safely. You need the same keystore for future app updates.

@@ -23,24 +23,31 @@ fun EditorScreen(vm: NotesViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                if (editing == null) "New Note" else "Edit Note",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
+            Column {
+                Text(
+                    if (editing == null) "New Note" else "Edit Note",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Autosaves when you press Save",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Row {
                 IconButton(onClick = { vm.cancelEdit() }) {
                     Icon(Icons.Default.Close, contentDescription = "Cancel")
                 }
-                IconButton(onClick = { vm.save(title, body, folder, tag) }) {
+                FilledIconButton(onClick = { vm.save(title, body, folder, tag) }) {
                     Icon(Icons.Default.Check, contentDescription = "Save")
                 }
             }
@@ -51,7 +58,9 @@ fun EditorScreen(vm: NotesViewModel) {
             onValueChange = { title = it },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Title") },
-            singleLine = true
+            singleLine = true,
+            textStyle = MaterialTheme.typography.titleLarge,
+            shape = MaterialTheme.shapes.extraLarge
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -60,7 +69,8 @@ fun EditorScreen(vm: NotesViewModel) {
                 onValueChange = { folder = it },
                 modifier = Modifier.weight(1f),
                 label = { Text("Folder") },
-                singleLine = true
+                singleLine = true,
+                shape = MaterialTheme.shapes.extraLarge
             )
 
             OutlinedTextField(
@@ -68,7 +78,8 @@ fun EditorScreen(vm: NotesViewModel) {
                 onValueChange = { tag = it },
                 modifier = Modifier.weight(1f),
                 label = { Text("Tag") },
-                singleLine = true
+                singleLine = true,
+                shape = MaterialTheme.shapes.extraLarge
             )
         }
 
@@ -78,12 +89,17 @@ fun EditorScreen(vm: NotesViewModel) {
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            label = { Text("Write your note") }
+            label = { Text("Write your note") },
+            shape = MaterialTheme.shapes.extraLarge,
+            textStyle = MaterialTheme.typography.bodyLarge
         )
 
         Button(
             onClick = { vm.save(title, body, folder, tag) },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = MaterialTheme.shapes.extraLarge
         ) {
             Text("Save Note")
         }

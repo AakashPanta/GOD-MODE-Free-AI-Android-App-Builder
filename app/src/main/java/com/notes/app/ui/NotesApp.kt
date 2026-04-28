@@ -25,13 +25,14 @@ fun NotesApp(vm: NotesViewModel) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            LargeTopAppBar(
                 title = {
                     Column {
                         Text("Notes", fontWeight = FontWeight.Bold)
                         Text(
-                            text = "${vm.activeNotes.size} active notes",
-                            style = MaterialTheme.typography.labelMedium
+                            text = "V2 • ${vm.activeNotes.size} active notes",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
@@ -57,9 +58,11 @@ fun NotesApp(vm: NotesViewModel) {
         },
         floatingActionButton = {
             if (vm.screen != Screen.EDITOR) {
-                FloatingActionButton(onClick = { vm.newNote() }) {
-                    Icon(Icons.Default.Add, contentDescription = "New note")
-                }
+                ExtendedFloatingActionButton(
+                    onClick = { vm.newNote() },
+                    icon = { Icon(Icons.Default.Add, contentDescription = "New note") },
+                    text = { Text("New Note") }
+                )
             }
         },
         bottomBar = {
