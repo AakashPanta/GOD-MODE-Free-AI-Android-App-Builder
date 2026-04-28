@@ -1,0 +1,88 @@
+name: Fix Signing Config Final
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch Gradle signing config (stable)
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          file = Path("app/build.gradle.kts")
+
+          if not file.exists():
+              raise SystemExit("build.gradle.kts not found")
+
+          text = file.read_text()
+
+          # REMOVE any env-based signing config
+          text = re.sub(r'storeFile\s*=\s*file\(.*?\)', '', text)
+          text = re.sub(r'storePassword\s*=.*', '', text)
+          text = re.sub(r'keyAlias\s*=.*', '', text)
+          text = re.sub(r'keyPassword\s*=.*', '', text)
+
+          # CLEAN duplicate blocks (optional safety)
+          text = re.sub(r'signingConfigs\s*{[^}]*}', '', text, flags=re.DOTALL)
+
+          # ADD clean stable config
+          signing_block = '''
+          signingConfigs {
+              create("release") {
+                  storeFile = file("signing/notes-release.jks")
+                  storePassword = "notespassword"
+                  keyAlias = "noteskey"
+                  keyPassword = "notespassword"
+              }
+          }
+          '''
+
+          text = text.replace("android {", f"android {{\n{signing_block}")
+
+          # Ensure release buildType uses it
+          if "buildTypes" not in text:
+              text = text.replace(
+                  "kotlinOptions {",
+                  '''
+                  buildTypes {
+                      release {
+                          isMinifyEnabled = false
+                          signingConfig = signingConfigs.getByName("release")
+                      }
+                  }
+
+                  kotlinOptions {
+                  '''
+              )
+          else:
+              text = text.replace(
+                  "release {",
+                  'release {\n                signingConfig = signingConfigs.getByName("release")'
+              )
+
+          file.write_text(text)
+          PY
+
+      - name: Ensure keystore folder exists
+        run: |
+          mkdir -p app/signing
+          touch app/signing/.gitkeep
+
+      - name: Commit fix
+        run: |
+          git config user.name "Final Signing Fix"
+          git config user.email "actions@github.com"
+
+          git add .
+          git commit -m "Fix signing config permanently (no env dependency)" || echo "No changes"
+          git push || echo "Push skipped"
