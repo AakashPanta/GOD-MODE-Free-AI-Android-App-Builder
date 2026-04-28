@@ -12,7 +12,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val vm: NotesViewModel = viewModel()
-            NotesTheme(darkTheme = vm.darkTheme) {
+            NotesTheme(themeName = vm.themeName, darkTheme = vm.darkTheme) {
                 NotesApp(vm = vm)
             }
         }

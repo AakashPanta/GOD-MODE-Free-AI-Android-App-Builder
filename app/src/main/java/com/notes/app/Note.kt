@@ -9,12 +9,14 @@ data class Note(
     val id: String = UUID.randomUUID().toString(),
     val title: String,
     val body: String,
-    val folder: String = "Personal",
-    val tag: String = "General",
+    val label: String = "Personal",
+    val tags: String = "General",
+    val color: Long = 0xFF8EA7FF,
     val pinned: Boolean = false,
     val favorite: Boolean = false,
     val archived: Boolean = false,
     val trashed: Boolean = false,
+    val locked: Boolean = false,
     val updatedAt: String = now()
 )
 
@@ -23,5 +25,13 @@ fun now(): String {
 }
 
 enum class Screen {
-    ONBOARDING, HOME, EDITOR, FAVORITES, ARCHIVE, TRASH, SETTINGS
+    LOCK, ONBOARDING, HOME, EDITOR, LABELS, FAVORITES, ARCHIVE, TRASH, SETTINGS, EXPORT_IMPORT, ABOUT
+}
+
+enum class ViewMode {
+    LIST, GRID
+}
+
+enum class SortMode {
+    UPDATED, TITLE, LABEL
 }

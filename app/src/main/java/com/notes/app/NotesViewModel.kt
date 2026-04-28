@@ -10,8 +10,11 @@ import java.util.UUID
 class NotesViewModel(application: Application) : AndroidViewModel(application) {
     private val store = NotesStore(application)
 
+    var unlocked by mutableStateOf(!store.appLockEnabled())
+        private set
+
     var screen by mutableStateOf(
-        if (store.hasCompletedOnboarding()) Screen.HOME else Screen.ONBOARDING
+        if (store.appLockEnabled()) Screen.LOCK else if (store.hasCompletedOnboarding()) Screen.HOME else Screen.ONBOARDING
     )
         private set
 
@@ -21,13 +24,25 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     var query by mutableStateOf("")
         private set
 
-    var selectedFolder by mutableStateOf("All")
+    var selectedLabel by mutableStateOf("All")
         private set
 
     var darkTheme by mutableStateOf(store.isDarkTheme())
         private set
 
+    var themeName by mutableStateOf(store.themeName())
+        private set
+
+    var viewMode by mutableStateOf(store.viewMode())
+        private set
+
+    var sortMode by mutableStateOf(store.sortMode())
+        private set
+
     var showDeleteDialog by mutableStateOf<Note?>(null)
+        private set
+
+    var exportMessage by mutableStateOf("")
         private set
 
     var notes by mutableStateOf(loadInitialNotes())
@@ -38,17 +53,17 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         return saved.ifEmpty {
             listOf(
                 Note(
-                    title = "Welcome to Notes",
-                    body = "Your notes are now saved permanently on this device.",
-                    folder = "Inbox",
-                    tag = "Start",
+                    title = "Welcome to Notes V3",
+                    body = "V3 adds labels, lock screen, formatting helpers, import/export, view modes, sort modes, and material themes.",
+                    label = "Inbox",
+                    tags = "Start, V3",
                     pinned = true
                 ),
                 Note(
-                    title = "Production upgrade installed",
-                    body = "This version includes persistence, editor polish, folders, filters, favorites, theme toggle, onboarding, and production structure.",
-                    folder = "Productivity",
-                    tag = "Upgrade",
+                    title = "Formatting toolbar",
+                    body = "Use the editor buttons to insert bold, italic, underline, headings, quotes, links, bullets, numbered lists, dividers, and highlights.",
+                    label = "Writing",
+                    tags = "Editor",
                     favorite = true
                 )
             )
@@ -59,15 +74,18 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         store.saveNotes(notes)
     }
 
-    val folders: List<String>
+    val labels: List<String>
         get() = listOf("All") + notes
             .filter { !it.trashed && !it.archived }
-            .map { it.folder.ifBlank { "Personal" } }
+            .map { it.label.ifBlank { "Personal" } }
             .distinct()
             .sorted()
 
     val activeNotes: List<Note>
         get() = notes.filter { !it.trashed && !it.archived }
+
+    val pinnedNotes: List<Note>
+        get() = activeNotes.filter { it.pinned }
 
     val filteredNotes: List<Note>
         get() {
@@ -77,21 +95,35 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                 Screen.FAVORITES -> activeNotes.filter { it.favorite }
                 else -> activeNotes
             }.let { list ->
-                if (selectedFolder == "All") list else list.filter { it.folder == selectedFolder }
+                if (selectedLabel == "All") list else list.filter { it.label == selectedLabel }
             }
 
-            if (query.isBlank()) return base
+            val searched = if (query.isBlank()) {
+                base
+            } else {
+                base.filter {
+                    it.title.contains(query, true) ||
+                        it.body.contains(query, true) ||
+                        it.label.contains(query, true) ||
+                        it.tags.contains(query, true)
+                }
+            }
 
-            return base.filter {
-                it.title.contains(query, true) ||
-                    it.body.contains(query, true) ||
-                    it.folder.contains(query, true) ||
-                    it.tag.contains(query, true)
+            return when (sortMode) {
+                SortMode.TITLE -> searched.sortedBy { it.title.lowercase() }
+                SortMode.LABEL -> searched.sortedBy { it.label.lowercase() }
+                SortMode.UPDATED -> searched.sortedWith(compareByDescending<Note> { it.pinned }.thenByDescending { it.updatedAt })
             }
         }
 
-    val pinnedNotes: List<Note>
-        get() = activeNotes.filter { it.pinned }
+    fun unlock(pin: String): Boolean {
+        val ok = pin == store.lockPin()
+        if (ok) {
+            unlocked = true
+            screen = if (store.hasCompletedOnboarding()) Screen.HOME else Screen.ONBOARDING
+        }
+        return ok
+    }
 
     fun finishOnboarding() {
         store.setOnboardingDone()
@@ -107,13 +139,33 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         query = value
     }
 
-    fun selectFolder(value: String) {
-        selectedFolder = value
+    fun selectLabel(value: String) {
+        selectedLabel = value
     }
 
     fun toggleTheme() {
         darkTheme = !darkTheme
         store.setDarkTheme(darkTheme)
+    }
+
+    fun setTheme(value: String) {
+        themeName = value
+        store.setThemeName(value)
+    }
+
+    fun toggleViewMode() {
+        viewMode = if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
+        store.setViewMode(viewMode)
+    }
+
+    fun setSort(value: SortMode) {
+        sortMode = value
+        store.setSortMode(value)
+    }
+
+    fun setLock(enabled: Boolean, pin: String) {
+        store.setAppLockEnabled(enabled)
+        if (pin.length >= 4) store.setLockPin(pin)
     }
 
     fun newNote() {
@@ -131,11 +183,11 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
         screen = Screen.HOME
     }
 
-    fun save(title: String, body: String, folder: String, tag: String) {
+    fun save(title: String, body: String, label: String, tags: String, color: Long, locked: Boolean) {
         val cleanTitle = title.ifBlank { "Untitled Note" }
         val cleanBody = body.ifBlank { "No content" }
-        val cleanFolder = folder.ifBlank { "Personal" }
-        val cleanTag = tag.ifBlank { "General" }
+        val cleanLabel = label.ifBlank { "Personal" }
+        val cleanTags = tags.ifBlank { "General" }
         val existing = selectedNote
 
         notes = if (existing == null) {
@@ -143,8 +195,10 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                 Note(
                     title = cleanTitle,
                     body = cleanBody,
-                    folder = cleanFolder,
-                    tag = cleanTag
+                    label = cleanLabel,
+                    tags = cleanTags,
+                    color = color,
+                    locked = locked
                 )
             ) + notes
         } else {
@@ -153,8 +207,10 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         title = cleanTitle,
                         body = cleanBody,
-                        folder = cleanFolder,
-                        tag = cleanTag,
+                        label = cleanLabel,
+                        tags = cleanTags,
+                        color = color,
+                        locked = locked,
                         updatedAt = now()
                     )
                 } else {
@@ -169,34 +225,22 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun togglePin(note: Note) {
-        notes = notes.map {
-            if (it.id == note.id) it.copy(pinned = !it.pinned, updatedAt = now()) else it
-        }
+        notes = notes.map { if (it.id == note.id) it.copy(pinned = !it.pinned, updatedAt = now()) else it }
         persist()
     }
 
     fun toggleFavorite(note: Note) {
-        notes = notes.map {
-            if (it.id == note.id) it.copy(favorite = !it.favorite, updatedAt = now()) else it
-        }
+        notes = notes.map { if (it.id == note.id) it.copy(favorite = !it.favorite, updatedAt = now()) else it }
         persist()
     }
 
     fun duplicate(note: Note) {
-        notes = listOf(
-            note.copy(
-                id = UUID.randomUUID().toString(),
-                title = note.title + " Copy",
-                updatedAt = now()
-            )
-        ) + notes
+        notes = listOf(note.copy(id = UUID.randomUUID().toString(), title = note.title + " Copy", updatedAt = now())) + notes
         persist()
     }
 
     fun archive(note: Note) {
-        notes = notes.map {
-            if (it.id == note.id) it.copy(archived = true, trashed = false, updatedAt = now()) else it
-        }
+        notes = notes.map { if (it.id == note.id) it.copy(archived = true, trashed = false, updatedAt = now()) else it }
         persist()
     }
 
@@ -210,22 +254,33 @@ class NotesViewModel(application: Application) : AndroidViewModel(application) {
 
     fun moveToTrashConfirmed() {
         val note = showDeleteDialog ?: return
-        notes = notes.map {
-            if (it.id == note.id) it.copy(trashed = true, archived = false, updatedAt = now()) else it
-        }
+        notes = notes.map { if (it.id == note.id) it.copy(trashed = true, archived = false, updatedAt = now()) else it }
         showDeleteDialog = null
         persist()
     }
 
     fun restore(note: Note) {
-        notes = notes.map {
-            if (it.id == note.id) it.copy(trashed = false, archived = false, updatedAt = now()) else it
-        }
+        notes = notes.map { if (it.id == note.id) it.copy(trashed = false, archived = false, updatedAt = now()) else it }
         persist()
     }
 
     fun deleteForever(note: Note) {
         notes = notes.filterNot { it.id == note.id }
         persist()
+    }
+
+    fun exportNotes() {
+        exportMessage = "Exported to: " + store.exportNotes(notes)
+    }
+
+    fun importLastExport() {
+        val imported = store.importFromLastExport()
+        if (imported.isNotEmpty()) {
+            notes = imported
+            persist()
+            exportMessage = "Imported ${imported.size} notes from last export."
+        } else {
+            exportMessage = "No export file found yet."
+        }
     }
 }

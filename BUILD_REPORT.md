@@ -1,21 +1,21 @@
-# Notes V2 Build Report
+# Notes V3 Build Report
 
-App Name: Notes
-Package Name: com.notes.app
-Version Code: 2
-Version Name: 2.0.0
+Version Code: 3
+Version Name: 3.0.0
 
-## V2 Upgrades
-- Premium dashboard
-- Large top app bar
-- Extended FAB
-- Improved note cards
-- Improved editor
-- Premium settings screen
-- Better onboarding
-- Improved dark/light color system
+## V3 Features
+- Labels
+- Search
+- Material theme presets
+- Dark/light theme
+- Export/import backup
+- List/grid view
+- Formatting helpers
+- Lock screen
+- Note color labels
+- Pinned/favorite/archive/trash
+- Settings/about pages
+- Persistent offline JSON storage
 
-## Outputs
-- Debug APK
-- Signed Release APK
-- Signed Release AAB
+## Note
+NotesMaster 3.0.4 is GPL-3.0 licensed. This V3 rebuild implements the same feature ideas natively instead of directly merging the original Java/WebView source.

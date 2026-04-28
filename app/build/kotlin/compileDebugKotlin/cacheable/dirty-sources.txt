@@ -1,0 +1,12 @@
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/ui/screens/EditorScreen.kt
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/NotesViewModel.kt
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/ui/screens/LockAndOnboarding.kt
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/Note.kt
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/ui/theme/Theme.kt
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/ui/screens/HomeScreen.kt
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/MainActivity.kt
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/ui/NotesApp.kt
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/NotesStore.kt
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/ui/screens/OnboardingScreen.kt
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/ui/screens/Common.kt
+/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/java/com/notes/app/ui/screens/SettingsScreen.kt
