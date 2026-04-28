@@ -1601,8 +1601,8 @@ module_dependencies {
   dependency_index: 70
   dependency_index: 32
   dependency_index: 58
-  dependency_index: 77
   dependency_index: 61
+  dependency_index: 77
   dependency_index: 71
 }
 repositories {
