@@ -75,7 +75,15 @@ jobs:
           package_name = os.environ["PACKAGE_NAME"]
           package_path = package_name.replace(".", "/")
 
-          for path in ["app", "build.gradle.kts", "settings.gradle.kts", "gradle", "gradlew", "gradlew.bat"]:
+          for path in [
+              "app",
+              "build.gradle.kts",
+              "settings.gradle.kts",
+              "gradle.properties",
+              "gradle",
+              "gradlew",
+              "gradlew.bat"
+          ]:
               p = Path(path)
               if p.is_dir():
                   shutil.rmtree(p)
@@ -113,6 +121,13 @@ jobs:
               id("com.android.application") version "8.5.2" apply false
               id("org.jetbrains.kotlin.android") version "1.9.24" apply false
           }
+          """)
+
+          write("gradle.properties", """
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          kotlin.code.style=official
           """)
 
           write("app/build.gradle.kts", f"""
