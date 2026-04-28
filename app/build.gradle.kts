@@ -6,7 +6,7 @@ plugins {
 android {
     signingConfigs {
         create("release") {
-            storeFile = file(System.getenv("SIGNING_KEYSTORE_PATH") ?: "signing/notes-release.jks")
+            storeFile = file("signing/notes-release.jks") ?: "signing/notes-release.jks")
             storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: "notespassword"
             keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "noteskey"
             keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: "notespassword"
