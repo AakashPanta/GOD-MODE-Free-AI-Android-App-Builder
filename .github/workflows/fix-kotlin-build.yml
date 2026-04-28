@@ -5,7 +5,6 @@ on:
 
 permissions:
   contents: write
-  actions: read
 
 jobs:
   fix-kotlin:
@@ -27,18 +26,12 @@ jobs:
       - name: Prepare environment
         run: |
           set -e
-
-          mkdir -p "$ANDROID_USER_HOME"
-          mkdir -p "$GRADLE_USER_HOME"
-          mkdir -p build-logs
-
-          chmod -R 777 "$ANDROID_USER_HOME"
-          chmod -R 777 "$GRADLE_USER_HOME"
+          mkdir -p "$ANDROID_USER_HOME" "$GRADLE_USER_HOME" build-logs
+          chmod -R 777 "$ANDROID_USER_HOME" "$GRADLE_USER_HOME"
 
       - name: Install required packages
         run: |
           set -e
-
           sudo apt update
           sudo apt install -y curl wget unzip zip git openjdk-17-jdk gradle python3
 
@@ -75,30 +68,26 @@ jobs:
         run: |
           set -e
 
-          python3 <<'PY'
-          from pathlib import Path
-          import re
+          python3 -c '
+from pathlib import Path
+import re
 
-          file_path = Path("app/src/main/java/com/notes/app/NotesViewModel.kt")
+file_path = Path("app/src/main/java/com/notes/app/NotesViewModel.kt")
 
-          if not file_path.exists():
-              raise SystemExit("NotesViewModel.kt not found")
+if not file_path.exists():
+    raise SystemExit("NotesViewModel.kt not found")
 
-          text = file_path.read_text()
+text = file_path.read_text()
 
-          text = text.replace('Regex("\\s+")', 'Regex("""\\\\s+""")')
-          text = text.replace('Regex("\\\\s+")', 'Regex("""\\\\s+""")')
-          text = text.replace('Regex("\\\\\\\\s+")', 'Regex("""\\\\s+""")')
-          text = text.replace('Regex("""\\s+""")', 'Regex("""\\\\s+""")')
+text = re.sub(
+    r"it\.body\.split\(Regex\([^)]+\)\)\.filter",
+    "it.body.split(Regex(\"\"\"\\\\s+\"\"\")).filter",
+    text
+)
 
-          text = re.sub(
-              r'it\.body\.split\(Regex\([^)]+\)\)\.filter',
-              'it.body.split(Regex("""\\\\s+""")).filter',
-              text
-          )
-
-          file_path.write_text(text)
-          PY
+file_path.write_text(text)
+print("Fixed NotesViewModel regex.")
+'
 
       - name: Rewrite EditorScreen with valid Kotlin
         run: |
@@ -107,363 +96,348 @@ jobs:
           mkdir -p app/src/main/java/com/notes/app/ui/screens
 
           cat > app/src/main/java/com/notes/app/ui/screens/EditorScreen.kt <<'EOF'
-          package com.notes.app.ui.screens
+package com.notes.app.ui.screens
 
-          import androidx.compose.foundation.layout.Arrangement
-          import androidx.compose.foundation.layout.Column
-          import androidx.compose.foundation.layout.Row
-          import androidx.compose.foundation.layout.Spacer
-          import androidx.compose.foundation.layout.fillMaxSize
-          import androidx.compose.foundation.layout.fillMaxWidth
-          import androidx.compose.foundation.layout.heightIn
-          import androidx.compose.foundation.layout.padding
-          import androidx.compose.foundation.layout.size
-          import androidx.compose.foundation.rememberScrollState
-          import androidx.compose.foundation.verticalScroll
-          import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.filled.Check
-          import androidx.compose.material.icons.filled.Close
-          import androidx.compose.material3.AssistChip
-          import androidx.compose.material3.ElevatedCard
-          import androidx.compose.material3.FilterChip
-          import androidx.compose.material3.FilledIconButton
-          import androidx.compose.material3.Icon
-          import androidx.compose.material3.IconButton
-          import androidx.compose.material3.MaterialTheme
-          import androidx.compose.material3.OutlinedTextField
-          import androidx.compose.material3.Surface
-          import androidx.compose.material3.Text
-          import androidx.compose.runtime.Composable
-          import androidx.compose.runtime.getValue
-          import androidx.compose.runtime.mutableStateOf
-          import androidx.compose.runtime.remember
-          import androidx.compose.runtime.setValue
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.unit.dp
-          import com.notes.app.NotesViewModel
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.notes.app.NotesViewModel
 
-          @Composable
-          fun EditorScreen(vm: NotesViewModel) {
-              val editing = vm.selectedNote
+@Composable
+fun EditorScreen(vm: NotesViewModel) {
+    val editing = vm.selectedNote
 
-              var title by remember(editing?.id) { mutableStateOf(editing?.title ?: "") }
-              var body by remember(editing?.id) { mutableStateOf(editing?.body ?: "") }
-              var label by remember(editing?.id) { mutableStateOf(editing?.label ?: "Personal") }
-              var tags by remember(editing?.id) { mutableStateOf(editing?.tags ?: "General") }
-              var color by remember(editing?.id) { mutableStateOf(editing?.color ?: 0xFF8EA7FF) }
-              var locked by remember(editing?.id) { mutableStateOf(editing?.locked ?: false) }
-              var favorite by remember(editing?.id) { mutableStateOf(editing?.favorite ?: false) }
-              var pinned by remember(editing?.id) { mutableStateOf(editing?.pinned ?: false) }
-              var preview by remember { mutableStateOf(false) }
+    var title by remember(editing?.id) { mutableStateOf(editing?.title ?: "") }
+    var body by remember(editing?.id) { mutableStateOf(editing?.body ?: "") }
+    var label by remember(editing?.id) { mutableStateOf(editing?.label ?: "Personal") }
+    var tags by remember(editing?.id) { mutableStateOf(editing?.tags ?: "General") }
+    var color by remember(editing?.id) { mutableStateOf(editing?.color ?: 0xFF8EA7FF) }
+    var locked by remember(editing?.id) { mutableStateOf(editing?.locked ?: false) }
+    var favorite by remember(editing?.id) { mutableStateOf(editing?.favorite ?: false) }
+    var pinned by remember(editing?.id) { mutableStateOf(editing?.pinned ?: false) }
+    var preview by remember { mutableStateOf(false) }
 
-              val hasUnsavedChanges = editing == null ||
-                  title != editing.title ||
-                  body != editing.body ||
-                  label != editing.label ||
-                  tags != editing.tags ||
-                  color != editing.color ||
-                  locked != editing.locked ||
-                  favorite != editing.favorite ||
-                  pinned != editing.pinned
+    val hasUnsavedChanges = editing == null ||
+        title != editing.title ||
+        body != editing.body ||
+        label != editing.label ||
+        tags != editing.tags ||
+        color != editing.color ||
+        locked != editing.locked ||
+        favorite != editing.favorite ||
+        pinned != editing.pinned
 
-              fun insertMarkdown(token: String) {
-                  body = if (body.isBlank()) {
-                      token
-                  } else {
-                      body + "\n" + token
-                  }
-              }
+    fun insertMarkdown(token: String) {
+        body = if (body.isBlank()) token else body + "\n" + token
+    }
 
-              Column(
-                  modifier = Modifier
-                      .fillMaxSize()
-                      .verticalScroll(rememberScrollState())
-                      .padding(18.dp)
-                      .padding(bottom = 120.dp),
-                  verticalArrangement = Arrangement.spacedBy(14.dp)
-              ) {
-                  Row(
-                      modifier = Modifier.fillMaxWidth(),
-                      horizontalArrangement = Arrangement.SpaceBetween
-                  ) {
-                      Column {
-                          Text(
-                              text = if (editing == null) "New Note" else "Edit Note",
-                              style = MaterialTheme.typography.headlineMedium,
-                              fontWeight = FontWeight.Bold
-                          )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(18.dp)
+            .padding(bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(
+                    text = if (editing == null) "New Note" else "Edit Note",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
 
-                          Text(
-                              text = if (hasUnsavedChanges) "Unsaved changes" else "Saved",
-                              style = MaterialTheme.typography.labelLarge,
-                              color = MaterialTheme.colorScheme.onSurfaceVariant
-                          )
-                      }
+                Text(
+                    text = if (hasUnsavedChanges) "Unsaved changes" else "Saved",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
-                      Row {
-                          IconButton(onClick = { vm.cancelEdit() }) {
-                              Icon(
-                                  imageVector = Icons.Default.Close,
-                                  contentDescription = "Cancel"
-                              )
-                          }
+            Row {
+                IconButton(onClick = { vm.cancelEdit() }) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Cancel"
+                    )
+                }
 
-                          FilledIconButton(
-                              onClick = {
-                                  vm.save(
-                                      title = title,
-                                      body = body,
-                                      label = label,
-                                      tags = tags,
-                                      color = color,
-                                      locked = locked,
-                                      favorite = favorite,
-                                      pinned = pinned
-                                  )
-                              }
-                          ) {
-                              Icon(
-                                  imageVector = Icons.Default.Check,
-                                  contentDescription = "Save"
-                              )
-                          }
-                      }
-                  }
+                FilledIconButton(
+                    onClick = {
+                        vm.save(
+                            title = title,
+                            body = body,
+                            label = label,
+                            tags = tags,
+                            color = color,
+                            locked = locked,
+                            favorite = favorite,
+                            pinned = pinned
+                        )
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Save"
+                    )
+                }
+            }
+        }
 
-                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                      FilterChip(
-                          selected = !preview,
-                          onClick = { preview = false },
-                          label = { Text("Write") }
-                      )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = !preview,
+                onClick = { preview = false },
+                label = { Text("Write") }
+            )
 
-                      FilterChip(
-                          selected = preview,
-                          onClick = { preview = true },
-                          label = { Text("Preview") }
-                      )
-                  }
+            FilterChip(
+                selected = preview,
+                onClick = { preview = true },
+                label = { Text("Preview") }
+            )
+        }
 
-                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                      AssistChip(
-                          onClick = { insertMarkdown("**bold text**") },
-                          label = { Text("Bold") }
-                      )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(
+                onClick = { insertMarkdown("**bold text**") },
+                label = { Text("Bold") }
+            )
 
-                      AssistChip(
-                          onClick = { insertMarkdown("_italic text_") },
-                          label = { Text("Italic") }
-                      )
+            AssistChip(
+                onClick = { insertMarkdown("_italic text_") },
+                label = { Text("Italic") }
+            )
 
-                      AssistChip(
-                          onClick = { insertMarkdown("# Heading") },
-                          label = { Text("Heading") }
-                      )
+            AssistChip(
+                onClick = { insertMarkdown("# Heading") },
+                label = { Text("Heading") }
+            )
 
-                      AssistChip(
-                          onClick = { insertMarkdown("> Quote") },
-                          label = { Text("Quote") }
-                      )
-                  }
+            AssistChip(
+                onClick = { insertMarkdown("> Quote") },
+                label = { Text("Quote") }
+            )
+        }
 
-                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                      AssistChip(
-                          onClick = { insertMarkdown("- Bullet item") },
-                          label = { Text("Bullet") }
-                      )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(
+                onClick = { insertMarkdown("- Bullet item") },
+                label = { Text("Bullet") }
+            )
 
-                      AssistChip(
-                          onClick = { insertMarkdown("1. Numbered item") },
-                          label = { Text("Number") }
-                      )
+            AssistChip(
+                onClick = { insertMarkdown("1. Numbered item") },
+                label = { Text("Number") }
+            )
 
-                      AssistChip(
-                          onClick = { insertMarkdown("[Link](https://example.com)") },
-                          label = { Text("Link") }
-                      )
+            AssistChip(
+                onClick = { insertMarkdown("[Link](https://example.com)") },
+                label = { Text("Link") }
+            )
 
-                      AssistChip(
-                          onClick = { insertMarkdown("- [ ] Checklist item") },
-                          label = { Text("Checklist") }
-                      )
-                  }
+            AssistChip(
+                onClick = { insertMarkdown("- [ ] Checklist item") },
+                label = { Text("Checklist") }
+            )
+        }
 
-                  OutlinedTextField(
-                      value = title,
-                      onValueChange = { title = it },
-                      modifier = Modifier.fillMaxWidth(),
-                      label = { Text("Title") },
-                      singleLine = true,
-                      shape = MaterialTheme.shapes.extraLarge
-                  )
+        OutlinedTextField(
+            value = title,
+            onValueChange = { title = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Title") },
+            singleLine = true,
+            shape = MaterialTheme.shapes.extraLarge
+        )
 
-                  Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                      OutlinedTextField(
-                          value = label,
-                          onValueChange = { label = it },
-                          modifier = Modifier.weight(1f),
-                          label = { Text("Label") },
-                          singleLine = true,
-                          shape = MaterialTheme.shapes.extraLarge
-                      )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
+                value = label,
+                onValueChange = { label = it },
+                modifier = Modifier.weight(1f),
+                label = { Text("Label") },
+                singleLine = true,
+                shape = MaterialTheme.shapes.extraLarge
+            )
 
-                      OutlinedTextField(
-                          value = tags,
-                          onValueChange = { tags = it },
-                          modifier = Modifier.weight(1f),
-                          label = { Text("Tags") },
-                          singleLine = true,
-                          shape = MaterialTheme.shapes.extraLarge
-                      )
-                  }
+            OutlinedTextField(
+                value = tags,
+                onValueChange = { tags = it },
+                modifier = Modifier.weight(1f),
+                label = { Text("Tags") },
+                singleLine = true,
+                shape = MaterialTheme.shapes.extraLarge
+            )
+        }
 
-                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                      val colors = listOf(
-                          0xFF8EA7FF,
-                          0xFF7BE4B2,
-                          0xFFFFB26B,
-                          0xFFFF9BCB,
-                          0xFFB69DFF,
-                          0xFFFF6B6B,
-                          0xFF4ECDC4
-                      )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val colors = listOf(
+                0xFF8EA7FF,
+                0xFF7BE4B2,
+                0xFFFFB26B,
+                0xFFFF9BCB,
+                0xFFB69DFF,
+                0xFFFF6B6B,
+                0xFF4ECDC4
+            )
 
-                      colors.forEach { itemColor ->
-                          FilterChip(
-                              selected = color == itemColor,
-                              onClick = { color = itemColor },
-                              label = { Text(" ") },
-                              leadingIcon = {
-                                  Surface(
-                                      color = Color(itemColor),
-                                      modifier = Modifier.size(16.dp),
-                                      shape = MaterialTheme.shapes.small
-                                  ) {}
-                              }
-                          )
-                      }
-                  }
+            colors.forEach { itemColor ->
+                FilterChip(
+                    selected = color == itemColor,
+                    onClick = { color = itemColor },
+                    label = { Text(" ") },
+                    leadingIcon = {
+                        Surface(
+                            color = Color(itemColor),
+                            modifier = Modifier.size(16.dp),
+                            shape = MaterialTheme.shapes.small
+                        ) {}
+                    }
+                )
+            }
+        }
 
-                  Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                      FilterChip(
-                          selected = favorite,
-                          onClick = { favorite = !favorite },
-                          label = { Text("Favorite") }
-                      )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FilterChip(
+                selected = favorite,
+                onClick = { favorite = !favorite },
+                label = { Text("Favorite") }
+            )
 
-                      FilterChip(
-                          selected = pinned,
-                          onClick = { pinned = !pinned },
-                          label = { Text("Pinned") }
-                      )
+            FilterChip(
+                selected = pinned,
+                onClick = { pinned = !pinned },
+                label = { Text("Pinned") }
+            )
 
-                      FilterChip(
-                          selected = locked,
-                          onClick = { locked = !locked },
-                          label = { Text("Locked") }
-                      )
-                  }
+            FilterChip(
+                selected = locked,
+                onClick = { locked = !locked },
+                label = { Text("Locked") }
+            )
+        }
 
-                  if (preview) {
-                      MarkdownPreview(content = body)
-                  } else {
-                      OutlinedTextField(
-                          value = body,
-                          onValueChange = { body = it },
-                          modifier = Modifier
-                              .fillMaxWidth()
-                              .heightIn(min = 320.dp),
-                          label = { Text("Write your note") },
-                          shape = MaterialTheme.shapes.extraLarge,
-                          textStyle = MaterialTheme.typography.bodyLarge
-                      )
-                  }
-              }
-          }
+        if (preview) {
+            MarkdownPreview(content = body)
+        } else {
+            OutlinedTextField(
+                value = body,
+                onValueChange = { body = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 320.dp),
+                label = { Text("Write your note") },
+                shape = MaterialTheme.shapes.extraLarge,
+                textStyle = MaterialTheme.typography.bodyLarge
+            )
+        }
+    }
+}
 
-          @Composable
-          fun MarkdownPreview(content: String) {
-              ElevatedCard(
-                  modifier = Modifier.fillMaxWidth(),
-                  shape = MaterialTheme.shapes.extraLarge
-              ) {
-                  Column(
-                      modifier = Modifier.padding(18.dp),
-                      verticalArrangement = Arrangement.spacedBy(10.dp)
-                  ) {
-                      if (content.isBlank()) {
-                          Text(
-                              text = "Preview is empty",
-                              color = MaterialTheme.colorScheme.onSurfaceVariant
-                          )
-                      } else {
-                          content.lines().forEach { line ->
-                              when {
-                                  line.startsWith("# ") -> {
-                                      Text(
-                                          text = line.removePrefix("# "),
-                                          style = MaterialTheme.typography.headlineSmall,
-                                          fontWeight = FontWeight.Bold
-                                      )
-                                  }
+@Composable
+fun MarkdownPreview(content: String) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (content.isBlank()) {
+                Text(
+                    text = "Preview is empty",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                content.lines().forEach { line ->
+                    when {
+                        line.startsWith("# ") -> {
+                            Text(
+                                text = line.removePrefix("# "),
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
 
-                                  line.startsWith("> ") -> {
-                                      Text(
-                                          text = line.removePrefix("> "),
-                                          color = MaterialTheme.colorScheme.primary
-                                      )
-                                  }
+                        line.startsWith("> ") -> {
+                            Text(
+                                text = line.removePrefix("> "),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
 
-                                  line.startsWith("- [ ]") -> {
-                                      Text(text = "☐ " + line.removePrefix("- [ ]").trim())
-                                  }
+                        line.startsWith("- [ ]") -> {
+                            Text(text = "☐ " + line.removePrefix("- [ ]").trim())
+                        }
 
-                                  line.startsWith("- ") -> {
-                                      Text(text = "• " + line.removePrefix("- "))
-                                  }
+                        line.startsWith("- ") -> {
+                            Text(text = "• " + line.removePrefix("- "))
+                        }
 
-                                  line.matches(Regex("""^\d+\. .*""")) -> {
-                                      Text(text = line)
-                                  }
+                        line.matches(Regex("""^\d+\. .*""")) -> {
+                            Text(text = line)
+                        }
 
-                                  else -> {
-                                      Text(
-                                          text = line
-                                              .replace("**", "")
-                                              .replace("_", "")
-                                              .replace("==", "")
-                                      )
-                                  }
-                              }
-                          }
-                      }
-                  }
-              }
-          }
-          EOF
+                        else -> {
+                            Text(
+                                text = line
+                                    .replace("**", "")
+                                    .replace("_", "")
+                                    .replace("==", "")
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+EOF
 
       - name: Verify Kotlin files
         run: |
           set -e
 
-          echo "Checking for illegal Kotlin regex escapes..."
+          echo "Checking Kotlin files..."
 
-          if grep -R 'Regex("\\s' app/src/main/java || true; then
-            echo "Found old Regex(\"\\s\") style pattern. Fixing again..."
-            python3 <<'PY'
-            from pathlib import Path
+          grep -R 'Regex("\\s' app/src/main/java && exit 1 || true
+          grep -R 'Regex("\\d' app/src/main/java && exit 1 || true
 
-            for path in Path("app/src/main/java").rglob("*.kt"):
-                text = path.read_text()
-                text = text.replace('Regex("\\s+")', 'Regex("""\\\\s+""")')
-                text = text.replace('Regex("\\d+\\. .*")', 'Regex("""^\\\\d+\\\\. .*""")')
-                path.write_text(text)
-            PY
-          fi
-
-          echo "Kotlin verification finished."
+          echo "Kotlin verification passed."
 
       - name: Ensure Gradle wrapper
         run: |
