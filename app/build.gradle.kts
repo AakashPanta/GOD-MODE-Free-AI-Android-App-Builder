@@ -4,6 +4,15 @@ plugins {
 }
 
 android {
+    signingConfigs {
+        create("release") {
+            storeFile = file(System.getenv("SIGNING_KEYSTORE_PATH") ?: "signing/notes-release.jks")
+            storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: "notespassword"
+            keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "noteskey"
+            keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: "notespassword"
+        }
+    }
+
     namespace = "com.notes.app"
     compileSdk = 36
 
@@ -12,7 +21,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
     }
 
     buildFeatures {
@@ -26,6 +35,18 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
     }
 
     kotlinOptions {

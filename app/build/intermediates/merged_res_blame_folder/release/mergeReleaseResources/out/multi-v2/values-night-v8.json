@@ -1,0 +1,26 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.notes.app-mergeReleaseResources-40:/values-night-v8/values-night-v8.xml",
+            "map": [
+                {
+                    "source": "/home/runner/work/GOD-MODE-Free-AI-Android-App-Builder/GOD-MODE-Free-AI-Android-App-Builder/app/src/main/res/values-night/styles.xml",
+                    "from": {
+                        "startLines": "1",
+                        "startColumns": "4",
+                        "startOffsets": "16",
+                        "endColumns": "79",
+                        "endOffsets": "91"
+                    },
+                    "to": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "78",
+                        "endOffsets": "129"
+                    }
+                }
+            ]
+        }
+    ]
+}
